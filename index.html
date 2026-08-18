@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-title" content="Ledger">
 <meta name="theme-color" content="#0b0b0c">
 <title>Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
 /* ============================================================================
    DESIGN NOTES — every rule here traces to research, not taste.
@@ -27,50 +30,72 @@
    card · exactly three status colours · every exercise gets its own container
    rather than a list row · detail exists but only on request.
 ============================================================================ */
+/* ---------------------------------------------------------------------------
+   Skin: Nocturne. Tokens lifted verbatim from the design system's styles.css —
+   ground #161826, surface #232532, one blurple accent #9184d9, Inter, 8px
+   radii, and elevation as a hairline ring rather than a drop shadow. The
+   semantic three (go/hold/stop) are retuned to sit at the same perceptual
+   lightness as the accent so no one colour shouts over the others.
+
+   Light mode is derived from the same neutral ramp rather than invented, so
+   both themes stay in step if the tokens are retuned.
+--------------------------------------------------------------------------- */
 :root{
   color-scheme:dark;
-  --bg:#0b0b0c; --card:#161618; --card-2:#1e1e21; --line:rgba(255,255,255,.09);
-  --ink:#fff; --ink-2:#a8a8ad; --ink-3:#6e6e76;
-  --accent:#4d8df0;
+  --n100:#f3f5fe; --n200:#e4e7f5; --n300:#cfd3e5; --n400:#b2b6ca; --n500:#9397ab;
+  --n600:#75798c; --n700:#595d6c; --n800:#3f424d; --n900:#292b31;
+  --a300:#d2cefd; --a400:#b5abfc; --a500:#968ae0; --a700:#5d5294; --a900:#2b2741;
+
+  --bg:#161826; --card:#232532; --card-2:#2b2e3d;
+  --line:color-mix(in srgb,#e9e9ed 11%,transparent);
+  --ink:#e9e9ed; --ink-2:var(--n400); --ink-3:var(--n500);
+  --accent:#9184d9;
   /* Three colours. One meaning each. Never reused for anything else. */
-  --go:#22c55e;      /* on track / progressing */
-  --hold:#f5b02e;    /* needs attention / repeat / stalled */
-  --stop:#ef4444;    /* regressing / problem */
-  --r:18px;
+  --go:#6fc99a;      /* on track / progressing */
+  --hold:#d9b571;    /* needs attention / repeat / stalled */
+  --stop:#e08585;    /* regressing / problem */
+  --r:14px;
+  --ring:0 0 0 1px var(--n800);
 }
 @media(prefers-color-scheme:light){:root{
-  --bg:#f6f6f4; --card:#fff; --card-2:#f1f1ef; --line:rgba(0,0,0,.10);
-  --ink:#0b0b0c; --ink-2:#5a5a60; --ink-3:#8a8a92; --accent:#2a6fd6;}}
+  color-scheme:light;
+  --bg:#f3f5fe; --card:#fff; --card-2:#e4e7f5;
+  --line:color-mix(in srgb,#292b31 12%,transparent);
+  --ink:#1a1c26; --ink-2:var(--n700); --ink-3:var(--n600); --accent:#5d5294;
+  --go:#2f8f5f; --hold:#96702a; --stop:#b64f4f;
+  --ring:0 0 0 1px color-mix(in srgb,#292b31 12%,transparent);}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);
-  font:16px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;
+  font:15.5px/1.5 "Inter",-apple-system,system-ui,"Segoe UI",sans-serif;
   padding-bottom:calc(84px + env(safe-area-inset-bottom));
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
 .wrap{max-width:640px;margin:0 auto;padding:20px 16px 0}
 
 /* type scale — wide gaps, not a gentle ramp, so hierarchy is unmistakable */
-.h1{font-size:28px;font-weight:700;letter-spacing:-.03em;margin:0}
-.h2{font-size:19px;font-weight:650;letter-spacing:-.02em;margin:0 0 10px}
-.lbl{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
-.sub{font-size:13.5px;color:var(--ink-2);line-height:1.45}
-.tiny{font-size:12px;color:var(--ink-3)}
+.h1{font-size:26px;font-weight:500;letter-spacing:-.03em;margin:0}
+.h2{font-size:17px;font-weight:500;letter-spacing:-.025em;margin:0 0 10px}
+.lbl{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.sub{font-size:13px;color:var(--ink-2);line-height:1.5}
+.tiny{font-size:11px;color:var(--ink-3);line-height:1.45}
 
-.card{background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:12px;
-  border:1px solid var(--line)}
+.card{background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px;
+  box-shadow:var(--ring)}
 .row{display:flex;align-items:center;gap:12px}
 .between{justify-content:space-between}
 
 /* ---- the exercise block: the thing he asked to be readable ---- */
-.ex{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+.ex{background:var(--card);box-shadow:var(--ring);border-radius:var(--r);
   padding:16px 18px;margin-bottom:10px;width:100%;text-align:left;display:block;
   position:relative;overflow:hidden}
 .ex:active{background:var(--card-2)}
 /* A 3px status spine. Colour is never the only cue — the chip carries a word. */
 .ex::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
 .ex .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
-.ex .nm{font-size:16.5px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+.ex .nm{font-size:15.5px;font-weight:500;letter-spacing:-.015em;line-height:1.25}
 .ex .mg{font-size:11.5px;color:var(--ink-3);margin-top:3px}
 .ex .mg em{font-style:normal;text-transform:capitalize}
 /* The prescription is the largest object on the card — Google's size/placement
@@ -105,46 +130,70 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .rb-lbl{margin-top:6px;font-size:12px;color:var(--ink-3);line-height:1.4}
 .rb-lbl b{color:var(--ink-2);font-weight:700}
 .rb-key{display:inline-block;width:8px;height:8px;border-radius:2px;vertical-align:-1px;margin-right:3px}
+
+/* ledger rows — Nocturne */
+.lgroup{background:var(--card);border-radius:var(--r);box-shadow:var(--ring);overflow:hidden;margin-bottom:12px}
+.lrow{display:flex;align-items:center;gap:10px;width:100%;padding:12px 13px;text-align:left;
+  border-top:1px solid var(--line);min-height:56px}
+.lgroup .lrow:first-child{border-top:none}
+.lrow:active{background:var(--card-2)}
+.lspine{width:3px;height:30px;border-radius:2px;flex:none}
+.lmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.lnm{font-size:13.5px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lsub{font-size:10.5px;color:var(--ink-3)}
+.lspark{width:64px;height:26px;flex:none}
+.ldelta{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+/* three-count summary */
+.trip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.trip>div{background:var(--card);box-shadow:var(--ring);border-radius:var(--r);padding:14px}
+.trip .n{font-size:30px;font-weight:500;letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+.trip .k{font-size:11px;color:var(--ink-3);margin-top:5px}
 .dots{display:flex;gap:5px;margin-top:12px}
 .dots i{width:26px;height:5px;border-radius:3px;background:var(--c);opacity:.85}
 
-.chip{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;
+.chip{font-size:11px;font-weight:500;padding:4px 9px;border-radius:var(--radius-sm,4px);
   white-space:nowrap;background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c)}
 
 /* horizontal template selector */
 .rail{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;margin:0 -16px 6px;
   padding-left:16px;padding-right:16px;scrollbar-width:none}
 .rail::-webkit-scrollbar{display:none}
-.rail button{flex:0 0 auto;padding:10px 15px;border-radius:12px;border:1px solid var(--line);
-  font-size:14px;font-weight:550;color:var(--ink-2);background:var(--card)}
-.rail button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.rail button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid var(--line);
+  font-size:13.5px;font-weight:500;color:var(--ink-2);background:var(--card)}
+.rail button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 14%,transparent);
+  color:var(--a300);border-color:var(--accent)}
 
 /* hero — one number, WHOOP-style compression */
-.hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:22px 20px;margin-bottom:12px}
-.hero .big{font-size:56px;font-weight:750;letter-spacing:-.045em;line-height:1;margin:6px 0 4px}
+.hero{background:var(--card);box-shadow:var(--ring);border-radius:var(--r);
+  padding:20px 18px;margin-bottom:12px}
+.hero .big{font-size:58px;font-weight:500;letter-spacing:-.045em;line-height:1;margin:6px 0 6px;
+  font-variant-numeric:tabular-nums}
 .hero .cap{font-size:13.5px;color:var(--ink-2);line-height:1.45}
 
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px}
-.tile .v{font-size:27px;font-weight:700;letter-spacing:-.03em;line-height:1.05;margin-top:5px}
+.tile{background:var(--card);box-shadow:var(--ring);border-radius:var(--r);padding:14px}
+.tile .v{font-size:26px;font-weight:500;letter-spacing:-.03em;line-height:1.05;margin-top:6px;
+  font-variant-numeric:tabular-nums}
 .tile .d{font-size:12px;color:var(--ink-3);margin-top:4px;line-height:1.35}
 
 .find{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--line)}
 .find:last-child{border-bottom:none}
 .find .dot{flex:0 0 8px;height:8px;border-radius:50%;background:var(--c);margin-top:7px}
-.find h3{font-size:15px;font-weight:620;margin:0 0 5px;letter-spacing:-.01em}
+.find h3{font-size:14.5px;font-weight:500;margin:0 0 5px;letter-spacing:-.015em}
 .find p{font-size:13.5px;color:var(--ink-2);margin:0;line-height:1.5}
 .find b{color:var(--ink);font-weight:620}
 
-.btn{display:block;width:100%;padding:15px;border-radius:14px;background:var(--accent);
-  color:#fff;font-weight:650;text-align:center;margin-bottom:10px}
-.btn.ghost{background:var(--card);border:1px solid var(--line);color:var(--ink);font-weight:550}
-.btn.quiet{background:none;color:var(--ink-3);font-size:13.5px;padding:12px}
-.btn.danger{background:none;border:1px solid var(--stop);color:var(--stop);font-weight:550}
+.btn{display:block;width:100%;padding:14px;border-radius:var(--radius-md,8px);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  border:1px solid var(--accent);color:var(--accent);font-weight:500;
+  text-align:center;margin-bottom:10px}
+.btn:hover{background:color-mix(in srgb,var(--accent) 20%,transparent)}
+.btn.ghost{background:var(--card);border:1px solid var(--line);color:var(--ink);font-weight:500}
+.btn.quiet{background:none;border:none;color:var(--ink-3);font-size:13px;padding:12px}
+.btn.danger{background:none;border:1px solid var(--stop);color:var(--stop);font-weight:500}
 .btn:active{opacity:.75}
 
-table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
 th,td{text-align:right;padding:10px 4px;border-bottom:1px solid var(--line)}
 th:first-child,td:first-child{text-align:left}
 th{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
@@ -170,8 +219,10 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 .step .n{min-width:52px;text-align:center;font-size:23px;font-weight:700;font-variant-numeric:tabular-nums}
 .timer{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .mom{display:flex;gap:10px;margin-bottom:14px}
-.mom div{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px}
-.mom .v{font-size:21px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
+/* > div, not div: the descendant selector also hit .v and .tiny, drawing a
+   bordered box inside each tile. Pre-existing; the Nocturne ring made it obvious. */
+.mom>div{flex:1;background:var(--card);box-shadow:var(--ring);border-radius:var(--r);padding:12px 14px}
+.mom .v{font-size:22px;font-weight:500;letter-spacing:-.03em;margin-top:4px;font-variant-numeric:tabular-nums}
 .empty{text-align:center;color:var(--ink-3);padding:50px 20px;font-size:14.5px;line-height:1.6}
 .drop{border:1.5px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;
   color:var(--ink-2);font-size:14px;margin-bottom:10px;display:block;background:var(--card-2)}
@@ -182,9 +233,9 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
   background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(20px);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;padding:12px 4px 14px;font-size:10.5px;font-weight:550;color:var(--ink-3);
+nav button{flex:1;padding:12px 4px 14px;font-size:10px;font-weight:500;color:var(--ink-3);
   display:flex;flex-direction:column;align-items:center;gap:4px}
-nav button[aria-current=page]{color:var(--ink)}
+nav button[aria-current=page]{color:var(--accent)}
 nav svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round}
 </style>
@@ -1501,7 +1552,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.36f07ca";
+const BUILD="2026-08-18.f199b4c";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1905,6 +1956,42 @@ function setRPE(name,date,v){
 
 /* ================================================================= INSIGHTS
    One hero number, then findings gated behind a tap. */
+/* ---- Nocturne's ledger row: name, muscle, sparkline, delta ----------------
+ * The one component in the mockup that beat what I had. Ported to the real
+ * engine: the sparkline plots this lift's actual e1RM history and the delta is
+ * the real change in working weight — the mockup invented both, along with the
+ * lifts themselves (a barbell bench press he has never performed).
+ * Verdicts come from A.progress, which is the same source the Trends tab uses.
+ */
+function sparkPoints(pts,w,h){
+  const v=pts.map(p=>p.e1rm).filter(x=>x>0);
+  if(v.length<2)return "";
+  const lo=Math.min(...v),hi=Math.max(...v),rng=(hi-lo)||1;
+  return v.map((y,i)=>`${(i*(w-4)/(v.length-1)+2).toFixed(1)},${(h-2-((y-lo)/rng)*(h-4)).toFixed(1)}`).join(" ");
+}
+function ledgerRow(p){
+  // Sparkline and number must plot the SAME series or the row contradicts
+  // itself — the first cut drew estimated max but printed the change in load,
+  // so leg press showed a falling line beside a delta of 0. Both are estimated
+  // max now, which is also what the chart below this list uses.
+  const d=Math.round(p.last-p.first);
+  const col=d>2?"--go":d<-2?"--stop":"--ink-3";
+  const heaviest=p.pr&&p.pr.heaviest?`${p.pr.heaviest.reps} × ${fmt(p.pr.heaviest.weight)} lb`:"";
+  return `<button class="lrow" onclick="detail='${q(p.name)}';render()">
+    <span class="lspine" style="background:var(${col})"></span>
+    <span class="lmain">
+      <span class="lnm">${esc(p.name)}</span>
+      <span class="lsub"><span style="text-transform:capitalize">${esc(nice((p.muscles||[])[0]||""))}</span>${
+        heaviest?` · ${heaviest}`:""}</span>
+    </span>
+    <svg class="lspark" viewBox="0 0 64 26" preserveAspectRatio="none"><polyline
+      points="${sparkPoints(p.pts,64,26)}" fill="none" stroke="var(${col})"
+      stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>
+    <span class="ldelta" style="color:var(${col})">${d>0?"+":""}${d}<span
+      style="font-size:10px;font-weight:400;color:var(--ink-3)"> lb</span></span>
+  </button>`;
+}
+
 /* A weekly-volume bar. Replaces the sentence "that takes Quads from about 3 to
  * 4 sets a week, a good week is 8 to 20" — which was repeated verbatim on every
  * row. Eye-tracking on dashboards (Tufts, TVCG 2025) finds repeated text stops
@@ -2151,9 +2238,28 @@ function viewTrends(){
    `<div class="card"><div class="sub">No Health data yet. Import a Health Auto Export JSON in
      <b>Data</b> for weight, lean mass, body fat, resting HR and HRV.</div></div>`;
 
+  // Rising / holding / falling, counted from the same slopes the per-lift
+  // chart draws. The mockup showed 11 / 3 / 2 against 16 lifts; 11 rising was
+  // right, the other two were transposed. These are counted, not asserted.
+  const scored=A.progress.filter(p=>p.n>=4);
+  const rise=scored.filter(p=>p.slope>0.5),fall=scored.filter(p=>p.slope<-0.5);
+  const hold=scored.filter(p=>p.slope>=-0.5&&p.slope<=0.5);
+  const byMove=scored.slice().sort((a,b)=>(b.last-b.first)-(a.last-a.first));
+
   return `<div class="h1" style="margin-bottom:14px">Trends</div>
+  <div class="sub" style="margin:-6px 0 12px">${scored.length} lifts have enough history to judge.</div>
+  <div class="trip">
+    <div><div class="n" style="color:var(--go)">${rise.length}</div><div class="k">rising</div></div>
+    <div><div class="n" style="color:var(--ink-2)">${hold.length}</div><div class="k">holding</div></div>
+    <div><div class="n" style="color:var(--stop)">${fall.length}</div><div class="k">falling</div></div>
+  </div>
+  <div class="lbl" style="margin:18px 0 8px">The ledger</div>
+  <div class="lgroup">${byMove.map(ledgerRow).join("")}</div>
+  <div class="tiny" style="margin:-4px 0 4px">Line and number are both your <b>estimated max</b> — the
+   shape over time, and the change from first session to most recent. It counts reps as well as load, so a
+   lift you only add reps to still moves. Tap any lift for its full history.</div>
   ${gapCard}
-  <div class="h2" style="margin-top:20px">Strength per lift</div>
+  <div class="h2" style="margin-top:24px">Strength per lift</div>
   <div class="sub" style="margin-bottom:12px">Your <b>estimated max</b> \u2014 the heaviest single rep you
    could probably manage, worked out from the weight and reps you actually did. An estimate, not a test.</div>
   <div class="rail">${rail}</div>
