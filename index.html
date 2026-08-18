@@ -88,6 +88,23 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
   text-align:left;background:color-mix(in srgb,var(--c) 12%,transparent);color:var(--ink-2);
   border-left:3px solid var(--c)}
 .ex .note b{color:var(--c);font-weight:700}
+.warnbar{margin:8px 0 4px;padding:9px 11px;border-radius:10px;font-size:13px;line-height:1.45;
+  background:color-mix(in srgb,var(--stop) 12%,transparent);color:var(--ink-2);
+  border-left:3px solid var(--stop)}
+.warnbar b{color:var(--ink);font-weight:700}
+.addrow{padding:13px 0 3px;border-top:1px solid var(--line);margin-top:9px}
+/* Three meanings, three visually distinct treatments. Using the same green for
+ * "the zone you want" and "the gain you'd make" made them read as one bar. */
+.rb{margin-top:8px}
+.rb-track{position:relative;height:9px;border-radius:5px;background:var(--line);overflow:hidden}
+.rb-band{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--go) 20%,transparent);
+  border-left:2px solid color-mix(in srgb,var(--go) 65%,transparent);
+  border-right:2px solid color-mix(in srgb,var(--go) 65%,transparent)}
+.rb-fill{position:absolute;top:0;bottom:0;left:0;background:var(--ink-2);border-radius:5px}
+.rb-gain{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:0 5px 5px 0}
+.rb-lbl{margin-top:6px;font-size:12px;color:var(--ink-3);line-height:1.4}
+.rb-lbl b{color:var(--ink-2);font-weight:700}
+.rb-key{display:inline-block;width:8px;height:8px;border-radius:2px;vertical-align:-1px;margin-right:3px}
 .dots{display:flex;gap:5px;margin-top:12px}
 .dots i{width:26px;height:5px;border-radius:3px;background:var(--c);opacity:.85}
 
@@ -1267,6 +1284,16 @@ function analyse(workouts, health, rpeLog) {
     const n = Math.round(1 / Math.max(f, 0.05));
     return `about once every ${n} weeks`;
   };
+  // Terse form for card headers, where the long phrase repeated twice on one
+  // card was pure duplication.
+  const freqShort = (f) => {
+    if (f >= 2.5) return "3× a week";
+    if (f >= 1.6) return "twice a week";
+    if (f >= 0.8) return "weekly";
+    if (f >= 0.55) return "3 weeks in 4";
+    if (f >= 0.4) return "every other week";
+    return `every ${Math.round(1 / Math.max(f, 0.05))} weeks`;
+  };
 
   const recommendations = templates.map((t) => {
     const freq = Math.max(0.25, tplFreq[t.title] || 0.5);
@@ -1332,7 +1359,7 @@ function analyse(workouts, health, rpeLog) {
                     target: 1, setsHere: Math.round(setsHere), gain };
     }
     return { title: t.title, freq: +freq.toFixed(1), freqPhrase: freqPhrase(freq),
-             lastDate: t.lastDate,
+             freqShort: freqShort(freq), lastDate: t.lastDate,
              setsPerSession: Math.round(setsHere), frequency, additions: cands };
   }).filter((r) => r.additions.length || r.frequency);
 
@@ -1474,7 +1501,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.e2a370a";
+const BUILD="2026-08-18.36f07ca";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1878,6 +1905,25 @@ function setRPE(name,date,v){
 
 /* ================================================================= INSIGHTS
    One hero number, then findings gated behind a tap. */
+/* A weekly-volume bar. Replaces the sentence "that takes Quads from about 3 to
+ * 4 sets a week, a good week is 8 to 20" — which was repeated verbatim on every
+ * row. Eye-tracking on dashboards (Tufts, TVCG 2025) finds repeated text stops
+ * being read; position and length are read at a glance. */
+function rangeBar(a){
+  const max=Math.max(a.hi*1.15,a.to*1.15,1);
+  const pc=v=>Math.max(0,Math.min(100,100*v/max));
+  const bandL=pc(a.lo),bandW=pc(a.hi)-pc(a.lo);
+  const short=a.to<a.lo;
+  return `<div class="rb"><div class="rb-track">
+      <div class="rb-band" style="left:${bandL}%;width:${bandW}%"></div>
+      <div class="rb-fill" style="width:${pc(a.from)}%"></div>
+      <div class="rb-gain" style="left:${pc(a.from)}%;width:${Math.max(0,pc(a.to)-pc(a.from))}%"></div>
+    </div>
+    <div class="rb-lbl"><span style="text-transform:capitalize">${nice(a.muscle)}</span>
+      <b>${a.from}→${a.to}</b> a week ·
+      <span style="color:var(${short?"--stop":"--go"})">good week ${a.lo}–${a.hi}</span></div></div>`;
+}
+
 function viewInsights(){
   // Skip forearms and lower back: worked indirectly, so 'add sets here' misleads.
   const INC=new Set(["forearms","lowerBack"]);
@@ -1900,27 +1946,31 @@ function viewInsights(){
       <div class="d">about ${Math.round(A.sessions/A.weeks)} a week over ${Math.round(A.weeks)} weeks</div></div>
   </div>
   <div class="h2" style="margin-top:22px">What to change, day by day</div>
-  <div class="sub" style="margin-bottom:12px">Your own sessions, with the highest-value change for each.
-   Projections use how often you actually run that day — two sets on a session you do once a fortnight
-   buys almost nothing.</div>
+  <div class="sub" style="margin-bottom:12px">One change per lift.
+   <span style="white-space:nowrap"><i class="rb-key" style="background:var(--ink-2)"></i>where you are</span> ·
+   <span style="white-space:nowrap"><i class="rb-key" style="background:var(--accent)"></i>what this adds</span> ·
+   <span style="white-space:nowrap"><i class="rb-key" style="background:color-mix(in srgb,var(--go) 45%,transparent)"></i>a good week</span></div>
   ${(A.recommendations||[]).map(r=>`<div class="card">
-    <div class="row between" style="align-items:flex-start;margin-bottom:10px">
-      <div style="min-width:0"><div style="font-size:16px;font-weight:650;letter-spacing:-.01em">${esc(
+    <div class="row between" style="align-items:baseline;gap:10px;margin-bottom:2px">
+      <div style="font-size:16px;font-weight:650;letter-spacing:-.01em;min-width:0">${esc(
         r.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
                .replace(/\s*Strength Session\s*$/i,"").trim())}</div>
-        <div class="tiny" style="margin-top:3px">You run this ${r.freqPhrase} · ${r.setsPerSession} sets a session</div></div>
+      <div class="tiny" style="white-space:nowrap">${r.freqShort} · ${r.setsPerSession} sets</div>
     </div>
-    ${r.frequency?`<div style="padding:13px 14px;border-radius:12px;margin-bottom:11px;
-      background:color-mix(in srgb,var(--stop) 13%,transparent)">
-      <div style="font-weight:650;font-size:14.5px;margin-bottom:5px">Run this every week</div>
-      <div class="sub">You run it <b>${r.frequency.currentPhrase}</b>. Doing it weekly is worth more than
-        any set you could add to it: ${r.frequency.gain.map(g=>`<b>${nice(g.muscle)}</b> would go from
-        <b>${g.from}</b> to <b>${g.to}</b> sets a week`).join(", ")}.</div></div>`:""}
-    ${r.additions.map(a=>`<div style="padding:12px 0;border-top:1px solid var(--line)">
-      <div style="font-size:14.5px;font-weight:600">Do <b>${a.setsTarget} sets</b> of ${esc(a.exercise)}${
-        a.setsNow?` — you do ${a.setsNow} now`:""}</div>
-      <div class="sub" style="margin-top:4px">That takes <span style="text-transform:capitalize">${nice(a.muscle)}</span>
-        from about <b>${a.from}</b> to <b>${a.to}</b> sets a week. A good week is <b>${a.lo} to ${a.hi}</b>.</div></div>`).join("")}
+    ${r.frequency?`<div class="warnbar">
+      <b>Run it weekly.</b> Worth more than any set you could add —
+      ${r.frequency.gain.map(g=>`${nice(g.muscle)} <b>${g.from}→${g.to}</b>`).join(", ")} a week.</div>`:""}
+    ${r.additions.map(a=>`<div class="addrow">
+      <div class="row between" style="align-items:baseline;gap:10px">
+        <div style="font-size:14.5px;font-weight:600;min-width:0">${esc(a.exercise)}</div>
+        <div style="white-space:nowrap;font-size:15px;font-weight:700">
+          <span style="color:var(--ink-3)">${a.setsNow}</span>
+          <span style="color:var(--ink-3);font-weight:500"> → </span>
+          <span style="color:var(--accent)">${a.setsTarget}</span>
+          <span class="tiny" style="font-weight:500"> sets</span></div>
+      </div>
+      ${rangeBar(a)}
+    </div>`).join("")}
   </div>`).join("")}
   ${(A.homeless||[]).length?`<div class="card" style="border-color:var(--hold)">
     <div class="h2" style="margin-bottom:6px">No session trains these</div>
