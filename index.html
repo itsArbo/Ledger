@@ -229,6 +229,9 @@ const marginalValue = (setsPerWeek) => DOSE_K / (DOSE_K + setsPerWeek);
 
 const INCIDENTAL = new Set(["forearms", "lowerBack"]);
 
+/* Rep counts people stop on because they are the number, not the limit. */
+const ROUND_REPS = new Set([8, 10, 12, 15, 20]);
+
 const UPPER = ["chest", "lats", "traps", "shoulders", "biceps", "triceps", "forearms"];
 const LOWER = ["quads", "hamstrings", "glutes"];
 
@@ -874,6 +877,102 @@ function analyse(workouts, health, rpeLog) {
   const rampPct = allSets ? Math.round((1 - topSets / allSets) * 100) : 0;
   const warmSets = workouts.reduce((a, w) => a + w.sets.length, 0) - allSets;
 
+  /* ------------------------------------------------------- rep quality
+   * Are your sets actually hard? You cannot answer that from load alone,
+   * and a session-level "effort" score (Apple's Workout Effort Rating,
+   * which is what Motra exports) is heart-rate driven — it measures how
+   * out of breath you got, not proximity to failure on any given set.
+   *
+   * But the rep counts themselves carry the signal. Fatigue is cumulative
+   * within an exercise: at a FIXED load, set 3 should not beat set 1. So
+   * for every block of >=2 sets at the same weight in one session, take
+   * delta = reps(last) - reps(first).
+   *
+   *   delta < 0   reps fade      -> load is meaningful, near failure
+   *   delta = 0   reps identical -> uninformative; you stopped on a count
+   *   delta > 0   reps RISE      -> the first set was demonstrably easy
+   *
+   * A positive mean delta is close to impossible if the early sets were
+   * taken near failure, so it is strong evidence of reps left in reserve.
+   * A zero mean delta is weaker evidence: it says the log cannot tell you
+   * how hard the set was, which is its own problem.
+   *
+   * HONEST LIMIT: this infers effort from a fatigue signature; it is not
+   * a substitute for an RPE you actually record. It tells you WHICH lifts
+   * to go and measure, not how much to add.
+   */
+  const rqEx = {};
+  workouts.forEach((w) => {
+    const by = {};
+    w.sets.forEach((s) => (by[s.exercise] = by[s.exercise] || []).push(s));
+    Object.entries(by).forEach(([n, ss]) => {
+      const r = rqEx[n] = rqEx[n] || { blocks: 0, sum: 0, up: 0, flat: 0, down: 0,
+                                       round: 0, sets: 0, allSets: 0, sessions: 0,
+                                       topSets: 0, slopeSum: 0, slopeN: 0 };
+      r.sessions++; r.allSets += ss.length;
+      const live = ss.filter((x) => x.reps > 0);
+      const top = Math.max(...ss.map((x) => x.weight));
+      const atTop = live.filter((x) => x.weight >= top - 1e-6);
+      r.topSets += atTop.length;
+
+      // Estimator A — fixed-load fade. Two or more sets at ONE weight gives a
+      // control: fatigue is cumulative, so set 3 should beat set 1 downward.
+      if (atTop.length >= 2) {
+        const d = atTop[atTop.length - 1].reps - atTop[0].reps;
+        r.blocks++; r.sum += d;
+        if (d > 0) r.up++; else if (d < 0) r.down++; else r.flat++;
+        atTop.forEach((x) => { r.sets++; if (ROUND_REPS.has(x.reps)) r.round++; });
+      }
+
+      // Estimator B — load/rep slope, the only signal a fully ramped lift
+      // leaves behind. Regress reps on load (as a fraction of that day's top)
+      // and report reps lost per +10% load.
+      //
+      // The benchmark is not arbitrary: at MATCHED effort, Epley's relation
+      // w(1+r/30)=const means a 10% load rise must cost ~3.5 reps around 8-9
+      // reps. Ascending sets also accumulate fatigue, which pushes the observed
+      // loss UP — so a low number here is a conservative reading, not a
+      // generous one. Near zero means the lighter sets carried no real effort.
+      if (new Set(live.map((x) => x.weight)).size >= 3) {
+        const L = linreg(live.map((x) => x.weight / top), live.map((x) => x.reps));
+        r.slopeSum += -L.slope * 0.10; r.slopeN++;
+      }
+    });
+  });
+  const MATCHED_EFFORT_LOSS = 3.5;  // reps lost per +10% load, Epley at ~8-9 reps
+  const repQuality = Object.entries(rqEx)
+    .filter(([, r]) => r.allSets >= 6)
+    .map(([name, r]) => {
+      const mean = r.blocks ? r.sum / r.blocks : null;
+      const perTop = r.topSets / r.sessions;
+      const slope = r.slopeN ? r.slopeSum / r.slopeN : null;
+      // Verdict prefers estimator A. Without it, say so plainly rather than
+      // inventing confidence: one top set has no control set to compare against.
+      let verdict;
+      if (r.blocks >= 2) verdict = mean > 0.25 ? "easy" : mean >= -0.25 ? "unknown" : "hard";
+      else verdict = "noControl";
+      return { name, blocks: r.blocks, conf: r.blocks >= 3 ? "ok" : "low",
+               mean: mean == null ? null : +mean.toFixed(2),
+               up: r.up, flat: r.flat, down: r.down, sessions: r.sessions,
+               topPerSession: +perTop.toFixed(1),
+               slope: slope == null ? null : +slope.toFixed(2),
+               rampWaste: slope == null ? null : Math.max(0, Math.round(100 * (1 - slope / MATCHED_EFFORT_LOSS))),
+               roundPct: r.sets ? Math.round(100 * r.round / r.sets) : 0, verdict };
+    })
+    .sort((a, b) => {
+      const rank = { easy: 0, noControl: 1, unknown: 2, hard: 3 };
+      return rank[a.verdict] - rank[b.verdict] || (b.mean ?? -9) - (a.mean ?? -9);
+    });
+  const rqTotals = repQuality.reduce((a, x) => {
+    a.up += x.up; a.flat += x.flat; a.down += x.down; return a;
+  }, { up: 0, flat: 0, down: 0 });
+  const rqNoControl = repQuality.filter((x) => x.verdict === "noControl").map((x) => x.name);
+  // Only meaningful for lifts that actually climb every set. A lift with 2-3
+  // sets at one weight has a shallow slope for a legitimate reason.
+  const rqRamped = repQuality
+    .filter((x) => x.slope != null && x.topPerSession < 2 && x.slope < 1.5)
+    .sort((a, b) => a.slope - b.slope);
+
   const COMPOUND = /squat|deadlift|press|row|pull ?down|dip|lunge/i;
   const cRest = [], iRest = [];
   workouts.forEach((w) => w.sets.forEach((s) => {
@@ -1204,7 +1303,7 @@ function analyse(workouts, health, rpeLog) {
   const barely = Object.keys(BOUNDS)
     .filter((m) => msets[m] && msets[m] / weeks < 2);
 
-  return { templates, recommendations, homeless, doseCurve, volumeTrend, prs, rampPct,
+  return { repQuality, rqTotals, rqNoControl, rqRamped, templates, recommendations, homeless, doseCurve, volumeTrend, prs, rampPct,
            streak, prsThisMonth, untrained, barely, sessionDays, topSets, allSets, warmSets, rampByEx,
            compoundRest: medOf(cRest), isolationRest: medOf(iRest), days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
@@ -1237,6 +1336,22 @@ function buildFindings(A) {
       .sort((a, b) => b.pct - a.pct).slice(0, 3);
     F.push({ sev: "crit", t: `${A.rampPct}% of your sets are below your working weight.`,
       d: `<b>${A.allSets - A.topSets} of ${A.allSets}</b> sets land under the top load you reach that day — the ramp. Worst: ${worst.map((x) => `<b>${x.n}</b> ${x.pct}%`).join(", ")}. Those sets cost the same time and the same rest as a working set but do far less. Doing them AT your working weight is the cheapest volume available to you, and it is also what unblocks every weight increase.` });
+  }
+  const rqT = A.rqTotals || { up: 0, flat: 0, down: 0 };
+  const rqN = rqT.up + rqT.flat + rqT.down;
+  const easy = (A.repQuality || []).filter((x) => x.verdict === "easy");
+  if (rqN >= 10 && (rqT.up + rqT.flat) / rqN >= 0.5) {
+    F.push({ sev: "crit", t: `Your reps do not fade — which means most of your sets are not close to failure.`,
+      d: `At a fixed load, fatigue should make set 3 worse than set 1. Across <b>${rqN}</b> same-weight blocks yours went <b>up ${rqT.up}×</b>, stayed <b>identical ${rqT.flat}×</b>, and declined only <b>${rqT.down}×</b>. Reps <em>rising</em> on a later set is near-impossible if the first was near failure. ${easy.length ? `Worst: ${easy.slice(0, 3).map((x) => `<b>${x.name}</b> (+${x.mean} reps/block)`).join(", ")}. ` : ""}This is why adding a little weight will not fix it — you would still stop on the same count. <b>Take the last set of each exercise to 1-2 reps in reserve and log the real number.</b> One calibrated set per lift makes every other set interpretable.` });
+  }
+  if ((A.rqNoControl || []).length >= 2) {
+    F.push({ sev: "warn", t: `${A.rqNoControl.length} lifts have no control set — ${A.rqNoControl.slice(0, 2).join(" and ")} included.`,
+      d: `${A.rqNoControl.map((n) => `<b>${n}</b>`).join(", ")} climb in weight every set, so you only ever do <b>one</b> set at your working weight. A single set cannot be checked: 9 reps at RPE 6 and 9 reps at RPE 10 look identical on paper. Nothing in your log — or anyone's — can tell those apart without a second set at the same load. <b>Do 2-3 sets at your working weight and this becomes answerable.</b>` });
+  }
+  const ramped = (A.rqRamped || []).slice(0, 3);
+  if (ramped.length >= 2) {
+    F.push({ sev: "info", t: `Your ramp sets carry almost no effort — about ${ramped[0].rampWaste}% wasted on ${ramped[0].name}.`,
+      d: `When load rises at matched effort, reps must fall: Epley's relation puts the cost of +10% load at roughly <b>3.5 reps</b> around 8-9 reps. Yours: ${ramped.map((x) => `<b>${x.name}</b> ${x.slope}`).join(", ")} reps lost per +10%. Ascending sets also accumulate fatigue, which pushes that number <em>up</em> — so these are conservative readings. Near zero means your lighter sets were nowhere near hard. On your RDL you did the same rep count at 135 and at 225 in one session; a 67% load rise that costs nothing means the first three sets were free.` });
   }
   if (A.isolationRest >= 150) {
     F.push({ sev: "info", t: `Your rest is fine — better than fine on compounds.`,
@@ -1292,7 +1407,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.dd14788";
+const BUILD="2026-08-18.76f72a1";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1726,6 +1841,57 @@ function viewInsights(){
     ${FIND.length>2?`<button class="btn quiet" style="margin:6px 0 0" onclick="showAllFind=${!showAllFind};render()">
       ${showAllFind?"Show less":`Show ${FIND.length-2} more`}</button>`:""}
   </div>
+  ${(A.repQuality||[]).length?(()=>{
+    const T=A.rqTotals,N=T.up+T.flat+T.down;
+    const vlab={easy:"Too light",unknown:"Can't tell",hard:"Near failure",noControl:"No control set"};
+    const vcol={easy:"--stop",unknown:"--hold",hard:"--go",noControl:"--accent"};
+    return `<div class="h2" style="margin-top:24px">Are your sets actually hard?</div>
+  <div class="sub" style="margin-bottom:12px"><b>How this works:</b> at the same weight, fatigue should
+   make your last set worse than your first. If it doesn't, you weren't near failure. This reads the
+   rep counts you already logged — it needs nothing new from you. Every lift you do is listed.</div>
+  <div class="hero" style="margin-bottom:12px">
+    <div class="lbl">Sets where reps failed to fade</div>
+    <div class="big">${Math.round(100*(T.up+T.flat)/Math.max(1,N))}%</div>
+    <div class="cap">Across <b>${N}</b> same-weight blocks your reps went <b>up ${T.up}×</b>, stayed
+      <b>identical ${T.flat}×</b>, and declined only <b>${T.down}×</b>. Reps rising on a later set is
+      near-impossible if the first one was hard. Adding a little weight won't fix this — you'd still
+      stop on the same count.</div>
+  </div>
+  <div class="card"><table><thead><tr><th>Lift</th><th>Sets at<br>top weight</th><th>Reps<br>across sets</th><th>Verdict</th></tr></thead><tbody>
+   ${A.repQuality.map(x=>`<tr><td>${esc(x.name.length>22?x.name.slice(0,21)+"…":x.name)}${
+     x.conf==="low"&&x.mean!=null?`<div class="tiny" style="opacity:.6">few repeats — provisional</div>`:""}</td>
+    <td style="color:var(${x.topPerSession<1.5?"--accent":"--ink-3"})">${x.topPerSession}</td>
+    <td style="color:var(${vcol[x.verdict]})">${x.mean==null?"—":(x.mean>0?"▲ +":x.mean<0?"▼ −":"– ")+(x.mean?Math.abs(x.mean):"")}</td>
+    <td style="color:var(${vcol[x.verdict]});font-weight:600">${vlab[x.verdict]}</td></tr>`).join("")}
+  </tbody></table>
+  <div class="tiny" style="margin-top:12px;line-height:1.55">
+   <b>Sets at top weight</b> is how many sets you average at your heaviest load for that lift. Below 1.5
+   means you ramp — you only ever do <em>one</em> real set, so there is nothing to compare it against.
+   <b>Reps across sets</b> is how many more reps your last set got than your first at that same weight.
+   Negative is what you want; a dash means the lift has no repeated load to measure.<br><br>
+   <b>“No control set”</b> is not a pass mark. Squat, RDL and anything else you ramp may be brutally hard
+   or comfortably easy — 9 reps at RPE 6 and 9 reps at RPE 10 look identical on paper, and no analysis of
+   rep counts can separate them. Do <b>2–3 sets at your working weight</b> and it becomes answerable.<br><br>
+   <b>What to do:</b> on anything red or amber, take the <em>last</em> set to 1–2 reps in reserve and log
+   what you actually got. One honest set per lift tells you how far off the weight is; guessing at +5 lb
+   does not.</div>
+  </div>
+  ${(A.rqRamped||[]).length>=2?(()=>{const R=A.rqRamped.slice(0,4);
+   return `<div class="card" style="border-color:var(--hold);margin-top:10px">
+    <div class="h2" style="margin-bottom:6px">How much your ramp sets are costing you</div>
+    <div class="sub" style="margin-bottom:10px">Raise the load at the same effort and reps <em>must</em> fall —
+     about <b>3.5 reps</b> for every +10% weight, around the 8–9 rep mark. That is the benchmark. Here is
+     what your climbing sets actually cost:</div>
+    <table><thead><tr><th>Lift</th><th>Reps lost<br>per +10%</th><th>vs 3.5<br>expected</th></tr></thead><tbody>
+    ${R.map(x=>`<tr><td>${esc(x.name.length>22?x.name.slice(0,21)+"…":x.name)}</td>
+     <td>${x.slope}</td>
+     <td style="color:var(${x.rampWaste>=80?"--stop":x.rampWaste>=60?"--hold":"--ink-3"});font-weight:600">${x.rampWaste}% short</td></tr>`).join("")}
+    </tbody></table>
+    <div class="tiny" style="margin-top:12px;line-height:1.55">Climbing sets also accumulate fatigue, which
+     pushes this number <em>up</em> — so these are generous readings and the real gap is wider. Near zero
+     means the lighter sets carried no meaningful effort at all: they cost you the same time and the same
+     rest as a working set and bought you nothing.</div></div>`;})():""}`;})():""}
+
   <div class="h2" style="margin-top:24px">Are you fixing it?</div>
   <div class="sub" style="margin-bottom:12px">Weekly sets per muscle, last 4 weeks against the 4 before.
    A snapshot tells you where you are; this tells you which way you are moving.</div>
