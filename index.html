@@ -6,106 +6,155 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Ledger">
-<meta name="theme-color" content="#0d0d0d">
+<meta name="theme-color" content="#0b0b0c">
 <title>Ledger</title>
 <style>
-:root{color-scheme:dark;
- --surface-1:#1a1a19;--page:#0d0d0d;--text-primary:#fff;--text-secondary:#c3c2b7;
- --muted:#898781;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);
- --series-1:#3987e5;--series-2:#d95926;
- --z1:#86b6ef;--z2:#5598e7;--z3:#3987e5;--z4:#256abf;--z5:#184f95;
- --good:#0ca30c;--warning:#fab219;--critical:#d03b3b;--radius:14px}
-@media(prefers-color-scheme:light){:root{color-scheme:light;
- --surface-1:#fcfcfb;--page:#f9f9f7;--text-primary:#0b0b0b;--text-secondary:#52514e;
- --grid:#e1e0d9;--axis:#c3c2b7;--border:rgba(11,11,11,.10);
- --series-1:#2a78d6;--series-2:#eb6834}}
+/* ============================================================================
+   DESIGN NOTES — every rule here traces to research, not taste.
+
+   WHOOP (925studios breakdown): compress many signals into ONE primary number;
+   three-colour semantic vocabulary repeated everywhere so it is learned once;
+   primary metric oversized and "readable at arm's length" with supporting text
+   deliberately small; dark ground so coloured data reads as content rather than
+   decoration; default screen answers exactly one question.
+
+   Google Material 3 Expressive eye-tracking (10 apps): users found key elements
+   up to 4x faster when the primary action was larger and deliberately placed,
+   and when high-contrast containment grouped information. Age-related slowdown
+   disappeared entirely.
+
+   Applied: one question per screen · prescription is the largest object on the
+   card · exactly three status colours · every exercise gets its own container
+   rather than a list row · detail exists but only on request.
+============================================================================ */
+:root{
+  color-scheme:dark;
+  --bg:#0b0b0c; --card:#161618; --card-2:#1e1e21; --line:rgba(255,255,255,.09);
+  --ink:#fff; --ink-2:#a8a8ad; --ink-3:#6e6e76;
+  --accent:#4d8df0;
+  /* Three colours. One meaning each. Never reused for anything else. */
+  --go:#22c55e;      /* on track / progressing */
+  --hold:#f5b02e;    /* needs attention / repeat / stalled */
+  --stop:#ef4444;    /* regressing / problem */
+  --r:18px;
+}
+@media(prefers-color-scheme:light){:root{
+  --bg:#f6f6f4; --card:#fff; --card-2:#f1f1ef; --line:rgba(0,0,0,.10);
+  --ink:#0b0b0c; --ink-2:#5a5a60; --ink-3:#8a8a92; --accent:#2a6fd6;}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-body{background:var(--page);color:var(--text-primary);
- font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
- padding-bottom:calc(76px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased}
-h1{font-size:24px;margin:0;letter-spacing:-.02em}
-h2{font-size:17px;margin:0 0 8px}
-h3{font-size:15px;margin:0 0 4px}
-p{margin:0 0 10px}
-button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
-.wrap{max-width:680px;margin:0 auto;padding:18px 16px 0}
-header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
-header .sub{color:var(--muted);font-size:13px}
-.card{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);padding:15px;margin-bottom:12px}
-.muted{color:var(--muted)}.secondary{color:var(--text-secondary)}
-.small{font-size:13px}.tiny{font-size:12px}
-.cap{font-size:12.5px;color:var(--muted);margin:0 0 11px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
-.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);padding:13px}
-.tile .l{font-size:12px;color:var(--muted);margin-bottom:4px}
-.tile .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
-.tile .d{font-size:12px;color:var(--text-secondary);margin-top:3px}
-.btn{display:block;width:100%;padding:15px;border-radius:12px;background:var(--series-1);
- color:#fff;font-weight:600;text-align:center;margin-bottom:9px}
-.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text-primary);font-weight:500}
-.btn.danger{background:transparent;border:1px solid var(--critical);color:var(--critical);font-weight:500}
-.btn:active{opacity:.72}
-.ex{display:flex;align-items:center;justify-content:space-between;gap:12px;
- padding:13px 0;border-bottom:1px solid var(--border);width:100%;text-align:left}
-.ex:last-child{border-bottom:none}
-.ex>span:first-child{min-width:0;flex:1}
-.ex .name{display:block;font-weight:500;line-height:1.25}
-.ex .presc{display:block;font-size:13px;color:var(--muted);margin-top:3px}
-.badge{font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;
- border:1px solid var(--border);color:var(--text-secondary);white-space:nowrap}
-.badge.up{color:var(--good);border-color:var(--good)}
-.badge.down{color:var(--critical);border-color:var(--critical)}
-.badge.hold{color:var(--warning);border-color:var(--warning)}
-.finding{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border)}
-.finding:last-child{border-bottom:none}
-.rank{flex:0 0 26px;height:26px;border-radius:8px;display:flex;align-items:center;
- justify-content:center;font-weight:700;font-size:13px;color:#fff}
-.crit{background:var(--critical)}.warn{background:var(--warning);color:#241b00}
-.info{background:var(--series-1)}.good{background:var(--good)}
-.finding p{font-size:13.5px;color:var(--text-secondary);margin:0}
-.finding b{color:var(--text-primary)}
-svg{display:block;width:100%;height:auto;overflow:visible}
-table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
-th,td{text-align:right;padding:8px 4px;border-bottom:1px solid var(--border)}
+body{background:var(--bg);color:var(--ink);
+  font:16px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;
+  padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+.wrap{max-width:640px;margin:0 auto;padding:20px 16px 0}
+
+/* type scale — wide gaps, not a gentle ramp, so hierarchy is unmistakable */
+.h1{font-size:28px;font-weight:700;letter-spacing:-.03em;margin:0}
+.h2{font-size:19px;font-weight:650;letter-spacing:-.02em;margin:0 0 10px}
+.lbl{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.sub{font-size:13.5px;color:var(--ink-2);line-height:1.45}
+.tiny{font-size:12px;color:var(--ink-3)}
+
+.card{background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:12px;
+  border:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:12px}
+.between{justify-content:space-between}
+
+/* ---- the exercise block: the thing he asked to be readable ---- */
+.ex{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:10px;width:100%;text-align:left;display:block;
+  position:relative;overflow:hidden}
+.ex:active{background:var(--card-2)}
+/* A 3px status spine. Colour is never the only cue — the chip carries a word. */
+.ex::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c)}
+.ex .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.ex .nm{font-size:16.5px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+.ex .mg{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+.ex .mg em{font-style:normal;text-transform:capitalize}
+/* The prescription is the largest object on the card — Google's size/placement
+   finding is the single biggest lever on how fast it is found. */
+.ex .load{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ex .kg{font-size:42px;font-weight:700;letter-spacing:-.035em;line-height:1}
+.ex .unit{font-size:16px;font-weight:600;color:var(--ink-2)}
+.ex .xs{font-size:15px;color:var(--ink-2);font-weight:500}
+.ex .why{font-size:12.5px;color:var(--ink-3);margin-top:11px;line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dots{display:flex;gap:5px;margin-top:12px}
+.dots i{width:26px;height:5px;border-radius:3px;background:var(--c);opacity:.85}
+
+.chip{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;
+  white-space:nowrap;background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c)}
+
+/* horizontal template selector */
+.rail{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;margin:0 -16px 6px;
+  padding-left:16px;padding-right:16px;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.rail button{flex:0 0 auto;padding:10px 15px;border-radius:12px;border:1px solid var(--line);
+  font-size:14px;font-weight:550;color:var(--ink-2);background:var(--card)}
+.rail button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* hero — one number, WHOOP-style compression */
+.hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:22px 20px;margin-bottom:12px}
+.hero .big{font-size:56px;font-weight:750;letter-spacing:-.045em;line-height:1;margin:6px 0 4px}
+.hero .cap{font-size:13.5px;color:var(--ink-2);line-height:1.45}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px}
+.tile .v{font-size:27px;font-weight:700;letter-spacing:-.03em;line-height:1.05;margin-top:5px}
+.tile .d{font-size:12px;color:var(--ink-3);margin-top:4px;line-height:1.35}
+
+.find{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--line)}
+.find:last-child{border-bottom:none}
+.find .dot{flex:0 0 8px;height:8px;border-radius:50%;background:var(--c);margin-top:7px}
+.find h3{font-size:15px;font-weight:620;margin:0 0 5px;letter-spacing:-.01em}
+.find p{font-size:13.5px;color:var(--ink-2);margin:0;line-height:1.5}
+.find b{color:var(--ink);font-weight:620}
+
+.btn{display:block;width:100%;padding:15px;border-radius:14px;background:var(--accent);
+  color:#fff;font-weight:650;text-align:center;margin-bottom:10px}
+.btn.ghost{background:var(--card);border:1px solid var(--line);color:var(--ink);font-weight:550}
+.btn.quiet{background:none;color:var(--ink-3);font-size:13.5px;padding:12px}
+.btn.danger{background:none;border:1px solid var(--stop);color:var(--stop);font-weight:550}
+.btn:active{opacity:.75}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:10px 4px;border-bottom:1px solid var(--line)}
 th:first-child,td:first-child{text-align:left}
-th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
-.pill{font-size:11px;font-weight:600;padding:3px 7px;border-radius:5px;white-space:nowrap}
-.p-prog{color:var(--good);border:1px solid var(--good)}
-.p-flat{color:var(--warning);border:1px solid var(--warning)}
-.p-reg{color:var(--critical);border:1px solid var(--critical)}
-.p-noise{color:var(--muted);border:1px solid var(--border)}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);margin:2px 0 10px}
-.legend span{display:flex;align-items:center;gap:6px}
-.sw{width:11px;height:11px;border-radius:3px;display:inline-block}
-nav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;
- background:color-mix(in srgb,var(--page) 92%,transparent);backdrop-filter:blur(12px);
- border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--muted);
- display:flex;flex-direction:column;align-items:center;gap:3px}
-nav button[aria-current=page]{color:var(--series-1);font-weight:600}
-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
- stroke-linecap:round;stroke-linejoin:round}
-.empty{text-align:center;color:var(--muted);padding:40px 18px;font-size:14px}
-.drop{border:1.5px dashed var(--border);border-radius:12px;padding:22px 16px;text-align:center;
- color:var(--muted);font-size:14px;margin-bottom:10px}
-.ok{color:var(--good)}.bad{color:var(--critical)}
-.status{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px}
-.status:last-child{border-bottom:none}
-details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:7px 0}
-.chips{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.chips::-webkit-scrollbar{display:none}
-.chip{flex:0 0 auto}
-.chip{padding:8px 13px;border-radius:999px;border:1px solid var(--border);
- background:transparent;color:var(--text-secondary);font-size:14px;line-height:1}
-.chip[aria-pressed=true]{background:var(--series-1);border-color:var(--series-1);color:#fff;font-weight:600}
+th{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+tr:last-child td{border-bottom:none}
+
+svg{display:block;width:100%;height:auto;overflow:visible}
+.rpe{display:flex;gap:8px}
+.rpe button{flex:1;padding:14px 0;border-radius:12px;border:1px solid var(--line);
+  font-size:16px;font-weight:600;color:var(--ink-2);background:var(--card-2)}
+.rpe button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.hist{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.hist:last-child{border-bottom:none}
+.empty{text-align:center;color:var(--ink-3);padding:50px 20px;font-size:14.5px;line-height:1.6}
+.drop{border:1.5px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;
+  color:var(--ink-2);font-size:14px;margin-bottom:10px;display:block;background:var(--card-2)}
+.st{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.st:last-child{border-bottom:none}
+.st span:first-child{color:var(--ink-2)}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(20px);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:12px 4px 14px;font-size:10.5px;font-weight:550;color:var(--ink-3);
+  display:flex;flex-direction:column;align-items:center;gap:4px}
+nav button[aria-current=page]{color:var(--ink)}
+nav svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
 <body>
 <div class="wrap" id="app"></div>
 <nav>
- <button data-tab="today" onclick="go('today')"><svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>Today</button>
- <button data-tab="insights" onclick="go('insights')"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9M12 7v5l3 2"/></svg>Insights</button>
+ <button data-tab="today" onclick="go('today')"><svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9.5v5M21 9.5v5M6.5 12h11"/></svg>Train</button>
+ <button data-tab="insights" onclick="go('insights')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2"/></svg>Insights</button>
  <button data-tab="trends" onclick="go('trends')"><svg viewBox="0 0 24 24"><path d="M3 20h18M6 16l4-5 3 3 5-7"/></svg>Trends</button>
  <button data-tab="data" onclick="go('data')"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>Data</button>
 </nav>
@@ -140,6 +189,27 @@ const BOUNDS = {
   biceps: [8, 20], triceps: [8, 20], quads: [8, 20], hamstrings: [8, 16],
   glutes: [6, 16], abs: [6, 20], lowerBack: [4, 12], forearms: [4, 14],
 };
+
+/**
+ * Marginal value of one more weekly set, relative to your very first set.
+ *
+ * Pelland et al. (2025, Sports Medicine; 67 studies, 2,058 participants) found
+ * weekly volume relates to hypertrophy with DIMINISHING RETURNS and no observed
+ * plateau — a curve, not a cliff. So "minimum effective volume" thresholds are
+ * the wrong shape: they imply a step change where the data shows a smooth taper.
+ *
+ * Modelled as benefit(n) = ln(1 + n/K), whose derivative is 1/(K+n), giving
+ * relative marginal value K/(K+n). K=5 reproduces the reported shape over the
+ * 0-30 set range.
+ *
+ * HONEST LIMIT: this is fitted to the SHAPE the meta-regression describes, not
+ * to its coefficients. It ranks where added sets are worth most; it does not
+ * predict how much muscle you will gain. Treat it as a dial, not a dose.
+ */
+const DOSE_K = 5;
+const marginalValue = (setsPerWeek) => DOSE_K / (DOSE_K + setsPerWeek);
+
+const INCIDENTAL = new Set(["forearms", "lowerBack"]);
 
 const UPPER = ["chest", "lats", "traps", "shoulders", "biceps", "triceps", "forearms"];
 const LOWER = ["quads", "hamstrings", "glutes"];
@@ -339,7 +409,38 @@ function findMetric(metrics, key) {
 
 /* ---------------------------------------------------------------- progression */
 
-function defaultConfig(exercise, muscles) {
+/**
+ * Infer the smallest loadable step for an exercise from the weights actually
+ * used on it.
+ *
+ * A guessed increment prescribes weights the equipment cannot make: this user's
+ * leg press moves in 90 lb steps (plate-loaded, 45s per side) while the default
+ * was 5 lb. Taking the GCD of consecutive distinct weights recovers the real
+ * step — 2.5 lb on cable stacks, 10 lb on the Smith, 90 lb on the leg press.
+ *
+ * Needs >= 3 distinct weights; below that the inference is too fragile and the
+ * muscle-group default is used instead.
+ */
+function inferIncrement(weights) {
+  const ws = [...new Set(weights.filter((w) => w > 0))].sort((a, b) => a - b);
+  if (ws.length < 3) return null;
+  // Work in quarter-pounds as integers so floating point cannot corrupt the GCD.
+  const q = ws.map((w) => Math.round(w * 4));
+  const diffs = [];
+  for (let i = 1; i < q.length; i++) if (q[i] - q[i - 1] > 0) diffs.push(q[i] - q[i - 1]);
+  if (!diffs.length) return null;
+  const gcd2 = (a, b) => (b === 0 ? a : gcd2(b, a % b));
+  let g = diffs[0];
+  for (const d of diffs) g = gcd2(Math.max(g, d), Math.min(g, d));
+  const inc = g / 4;
+  // Guard both ends: sub-pound steps are almost certainly noise, and a step
+  // larger than half the working weight means the ladder is too sparse to trust.
+  if (inc < 1) return null;
+  if (inc > ws[ws.length - 1] / 2) return null;
+  return Math.round(inc * 4) / 4;
+}
+
+function defaultConfig(exercise, muscles, inferredIncrement) {
   const m = (muscles && muscles[0]) || "";
   const c = { repMin: 8, repMax: 12, sets: 3, increment: 5, rpeCap: 9, easyRPE: 7,
               stallLimit: 3, deloadFactor: 0.9 };
@@ -348,6 +449,9 @@ function defaultConfig(exercise, muscles) {
   } else if (["biceps", "triceps", "shoulders", "forearms"].includes(m)) {
     c.repMin = 10; c.repMax = 15; c.increment = 2.5;
   } else if (m === "abs") { c.repMin = 12; c.repMax = 20; c.increment = 5; }
+  // A step learned from your own logged weights beats any guess from muscle group.
+  if (inferredIncrement) { c.increment = inferredIncrement; c.incrementSource = "observed"; }
+  else c.incrementSource = "default";
   return c;
 }
 
@@ -461,7 +565,8 @@ function fingerprint(workouts) {
   return `${workouts.length}s/${sets}sets/${tot}lb/${iso(workouts[0].start)}-${iso(workouts[workouts.length-1].start)}`;
 }
 
-function analyse(workouts, health) {
+function analyse(workouts, health, rpeLog) {
+  rpeLog = rpeLog || {};
   const days = (workouts[workouts.length - 1].start - workouts[0].start) / 864e5 + 1;
   const weeks = days / 7;
   const vol = (s) => s.weight * s.reps * (PER_LIMB.has(s.exercise) ? 2 : 1);
@@ -472,11 +577,25 @@ function analyse(workouts, health) {
   workouts.forEach((w) => w.sets.forEach((s) =>
     s.muscles.forEach((m) => { msets[m] = (msets[m] || 0) + 1; })));
 
+  // Sessions per muscle per week. Frequency has a supported positive effect on
+  // STRENGTH (diminishing returns) but a negligible one on hypertrophy, so it is
+  // reported separately and labelled as such rather than folded into volume.
+  const mdays = {};
+  workouts.forEach((w) => {
+    const day = w.start.toISOString().slice(0, 10);
+    const seen = new Set();
+    w.sets.forEach((s) => s.muscles.forEach((m) => seen.add(m)));
+    seen.forEach((m) => { (mdays[m] = mdays[m] || new Set()).add(day); });
+  });
+
   const volume = Object.keys(BOUNDS).map((m) => {
     const n = msets[m] || 0, per = n / weeks, [lo, hi] = BOUNDS[m];
+    const freq = (mdays[m] ? mdays[m].size : 0) / weeks;
     return { muscle: m, sets: n, perWeek: +per.toFixed(1), lo, hi,
+             freqPerWeek: +freq.toFixed(1),
+             marginal: +(marginalValue(per) * 100).toFixed(0),
              status: n === 0 ? "zero" : per < lo ? "under" : per > hi ? "over" : "ok" };
-  }).sort((a, b) => b.perWeek - a.perWeek);
+  }).sort((a, b) => b.marginal - a.marginal);
 
   const sum = (list) => list.reduce((a, m) => a + (msets[m] || 0), 0);
   const balance = { upper: sum(UPPER), lower: sum(LOWER),
@@ -492,14 +611,20 @@ function analyse(workouts, health) {
       if (!best[s.exercise] || e > best[s.exercise].e) best[s.exercise] = { e, s };
     });
     Object.entries(best).forEach(([name, { e, s }]) => {
+      const day = w.start.toISOString().slice(0, 10);
+      const rpe = (rpeLog[name] && rpeLog[name][day]) || null;
       (byEx[name] = byEx[name] || []).push({
-        date: w.start.toISOString().slice(0, 10), e1rm: e, weight: s.weight,
-        reps: s.reps, muscles: s.muscles,
+        date: day, e1rm: e, weight: s.weight, reps: s.reps, muscles: s.muscles, rpe,
         sets: w.sets.filter((x) => x.exercise === name)
-                    .map((x) => ({ weight: x.weight, reps: x.reps, rpe: null })),
+                    .map((x) => ({ weight: x.weight, reps: x.reps, rpe })),
       });
     });
   });
+
+  const weightsByEx = {};
+  workouts.forEach((w) => w.sets.forEach((s) => {
+    (weightsByEx[s.exercise] = weightsByEx[s.exercise] || []).push(s.weight);
+  }));
 
   const progress = Object.entries(byEx).map(([name, pts]) => {
     pts.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -512,9 +637,12 @@ function analyse(workouts, health) {
       else if (slope < -0.5 && r2 > 0.4) verdict = "regressing";
       else if (Math.abs(slope) <= 0.5) verdict = "stalled";
     } else verdict = "tooFew";
+    const ladder = [...new Set((weightsByEx[name] || []).filter((x) => x > 0))]
+                     .sort((a, b) => a - b);
     return { name, n: pts.length, slope: +slope.toFixed(2), r2: +r2.toFixed(2),
              verdict, first: +pts[0].e1rm.toFixed(1),
              last: +pts[pts.length - 1].e1rm.toFixed(1),
+             increment: inferIncrement(weightsByEx[name] || []), ladder,
              muscles: pts[pts.length - 1].muscles, pts };
   }).sort((a, b) => a.slope - b.slope);
 
@@ -589,11 +717,36 @@ function analyse(workouts, health) {
              restingHR: grab("restingHR"), hrv: grab("hrv") };
   }
 
-  return { days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
+  // Session templates, recovered from what you actually do rather than a plan
+  // you would have to enter. "What is next" is then answerable: the template you
+  // have gone longest without doing, with its exercises in your usual order.
+  const tpl = {};
+  workouts.forEach((w) => {
+    const key = (w.title || "Session").replace(/\s+/g, " ").trim();
+    const day = w.start.toISOString().slice(0, 10);
+    const order = [];
+    w.sets.forEach((s) => { if (!order.includes(s.exercise)) order.push(s.exercise); });
+    if (!tpl[key] || tpl[key].lastDate < day) {
+      tpl[key] = { title: key, lastDate: day, exercises: order,
+                   count: (tpl[key] ? tpl[key].count : 0) + 1 };
+    } else tpl[key].count++;
+  });
+  const allTpl = Object.values(tpl).filter((t) => t.exercises.length >= 2);
+  // Prefer sessions you actually repeat; one-off titles are noise, not a split.
+  const repeated = allTpl.filter((t) => t.count >= 2);
+  const templates = (repeated.length >= 2 ? repeated : allTpl)
+    .sort((a, b) => (a.lastDate < b.lastDate ? -1 : 1));  // longest-ago first = due next
+
+  const doseCurve = [];
+  for (let n = 0; n <= 30; n += 0.5) {
+    doseCurve.push([n, +(Math.log(1 + n / DOSE_K) / Math.log(1 + 30 / DOSE_K) * 100).toFixed(1)]);
+  }
+
+  return { templates, doseCurve, days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
            totalVolume: Math.round(workouts.reduce((a, w) =>
              a + w.sets.reduce((b, s) => b + vol(s), 0), 0)),
-           volume, balance, progress, byEx, restMed, tutMed,
+           volume, balance, progress, byEx, restMed: Math.round(restMed), tutMed: Math.round(tutMed),
            ratio: tutMed ? +(restMed / tutMed).toFixed(1) : 0,
            over3: rests.length ? Math.round(rests.filter((r) => r > 180).length / rests.length * 100) : 0,
            restByEx, weekly: Object.values(weekly).sort((a, b) => (a.week < b.week ? -1 : 1)),
@@ -615,12 +768,17 @@ function buildFindings(A) {
 
   if (A.ratio >= 3) {
     F.push({ sev: "crit", t: `You rest ${A.ratio}× longer than you lift.`,
-      d: `Median rest is <b>${A.restMed}s</b> against a <b>${A.tutMed}s</b> set, and <b>${A.over3}%</b> of sets rest over three minutes. If your heart rate is already back near baseline before the next set, that time is not recovery — it is just elapsed. Cutting isolation rest to 60–90s is the cheapest volume available to you.` });
+      d: `Median rest is <b>${Math.round(A.restMed)}s</b> against a <b>${Math.round(A.tutMed)}s</b> set, and <b>${A.over3}%</b> of sets rest over three minutes. If your heart rate is already back near baseline before the next set, that time is not recovery — it is just elapsed. Cutting isolation rest to 60–90s is the cheapest volume available to you.` });
   }
-  if (under.length >= 6) {
-    const worst = under.slice().sort((a, b) => (a.perWeek - a.lo) - (b.perWeek - b.lo)).slice(0, 3);
-    F.push({ sev: "crit", t: `${under.length} of ${A.volume.length} muscle groups are below minimum volume.`,
-      d: `Worst: ${worst.map((x) => `<b>${x.muscle}</b> at ${x.perWeek}/wk against ${x.lo}`).join(", ")}. This counting is <em>generous</em> — a set counts toward every muscle Motra tags it with — so reality is worse, not better.` });
+  const lowVol = A.volume.filter((x) => x.marginal >= 50 && x.sets > 0 && !INCIDENTAL.has(x.muscle)).slice(0, 4);
+  if (lowVol.length) {
+    F.push({ sev: "crit", t: `You are on the steep part of the volume curve — added sets are worth more now than they ever will be again.`,
+      d: `${lowVol.map((x) => `<b>${x.muscle}</b> at ${x.perWeek} sets/wk (next set worth ~${x.marginal}% of your first)`).join(", ")}. Volume relates to growth with <em>diminishing returns and no observed plateau</em> (Pelland et al. 2025, 67 studies, 2,058 participants), so this is a dial rather than a threshold to clear — but a set added at 3/wk buys far more than one added at 15/wk. Counting is generous here: a set counts toward every muscle Motra tags it with.` });
+  }
+  const once = A.volume.filter((x) => x.sets > 0 && x.freqPerWeek > 0 && x.freqPerWeek < 1.4);
+  if (once.length >= 3) {
+    F.push({ sev: "info", t: `${once.length} muscle groups are trained about once a week.`,
+      d: `${once.slice(0, 5).map((x) => `<b>${x.muscle}</b> (${x.freqPerWeek}×/wk)`).join(", ")}. Worth knowing precisely what this does and does not buy: higher frequency has a supported positive effect on <b>strength</b>, but its effect on <b>hypertrophy is compatible with negligible</b> once weekly volume is matched. So splitting the same sets across two days may help your lifts; it is not a growth lever.` });
   }
   const ratio = A.balance.lower ? A.balance.upper / A.balance.lower : 99;
   if (ratio > 2) {
@@ -662,332 +820,364 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.2c97e0e";
+const BUILD="2026-08-18.ce87308";
 
 /* ---------------------------------------------------------------- storage */
-const KEY="ledger.v1", _mem={};
-const store={
-  get(k){try{return localStorage.getItem(k)}catch(e){return _mem[k]??null}},
-  set(k,v){try{localStorage.setItem(k,v)}catch(e){_mem[k]=v}}
-};
+const KEY="ledger.v1",_mem={};
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return _mem[k]??null}},
+             set(k,v){try{localStorage.setItem(k,v)}catch(e){_mem[k]=v}}};
 let DB=load();
 function load(){
   const raw=store.get(KEY);
   if(raw){try{const d=JSON.parse(raw);
     (d.workouts||[]).forEach(w=>{w.start=new Date(w.start);if(w.end)w.end=new Date(w.end);});
-    return d;}catch(e){console.warn("store unreadable, starting fresh");}}
-  return {workouts:[],health:null,configs:{},importedAt:null,healthAt:null};
+    d.rpe=d.rpe||{};return d;}catch(e){console.warn("store unreadable; starting fresh");}}
+  return {workouts:[],health:null,configs:{},rpe:{},importedAt:null,healthAt:null};
 }
 function save(){store.set(KEY,JSON.stringify(DB));}
-
 let A=null,FIND=[];
 function recompute(){
   if(!DB.workouts.length){A=null;FIND=[];return;}
-  A=analyse(DB.workouts,DB.health);
-  FIND=buildFindings(A);
+  A=analyse(DB.workouts,DB.health,DB.rpe||{});FIND=buildFindings(A);
 }
 recompute();
 
 /* ---------------------------------------------------------------- helpers */
 const $=i=>document.getElementById(i);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const nice=m=>({lowerBack:"Lower back",hamstrings:"Hamstrings"}[m]||m.charAt(0).toUpperCase()+m.slice(1));
-const CS=()=>getComputedStyle(document.documentElement);
-const C=n=>CS().getPropertyValue(n).trim();
+const q=s=>String(s).replace(/'/g,"\\'");
+const nice=m=>({lowerBack:"lower back"}[m]||m);
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const shortDate=s=>new Date(s+"T12:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"});
-const BADGE={increase:["up","+ weight"],doubleIncrease:["up","++ weight"],addReps:["","+ rep"],
- hold:["hold","hold"],consolidate:["hold","repeat load"],deload:["down","deload"],needsCalibration:["","set weight"]};
+const daysAgo=s=>Math.round((Date.now()-new Date(s+"T12:00:00"))/864e5);
 
-/* ---------------------------------------------------------------- views */
-let tab="today", trendEx=null;
-function go(t){tab=t;render();scrollTo(0,0);}
+/* Exactly three status colours, one meaning each — learned once, applied everywhere. */
+const STATUS={
+  increase:{c:"--go",t:"add weight"}, doubleIncrease:{c:"--go",t:"big jump"},
+  addReps:{c:"--go",t:"add a rep"},   consolidate:{c:"--hold",t:"repeat load"},
+  hold:{c:"--hold",t:"hold"},         deload:{c:"--stop",t:"deload"},
+  needsCalibration:{c:"--hold",t:"set weight"},
+};
+const cfgFor=p=>DB.configs[p.name]||defaultConfig(p.name,p.muscles,p.increment);
+const prescFor=p=>nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met})),cfgFor(p));
+
+/* ---------------------------------------------------------------- routing */
+let tab="today",detail=null,tplIdx=0,trendEx=null,showAllFind=false;
+function go(t){tab=t;detail=null;render();scrollTo(0,0);}
 function render(){
   document.querySelectorAll("nav button").forEach(b=>
     b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
   const el=$("app");
   if(!DB.workouts.length&&tab!=="data"){el.innerHTML=viewEmpty();return;}
+  if(detail){el.innerHTML=viewDetail();return;}
   el.innerHTML=tab==="today"?viewToday():tab==="insights"?viewInsights():
                tab==="trends"?viewTrends():viewData();
+  if(tab==="insights")drawDose();
   if(tab==="trends")drawTrends();
-  if(tab==="insights")drawVolume();
 }
-
 function viewEmpty(){
-  return `<header><h1>Ledger</h1></header>
-  <div class="empty">No data yet.<br><br>Open <b>Data</b> and import your Motra export to begin.</div>
-  <button class="btn" onclick="go('data')">Go to Data</button>`;
+  return `<div style="padding-top:60px"><div class="h1">Ledger</div>
+  <div class="empty">Nothing imported yet.<br>Open <b>Data</b> and add your Motra export.</div>
+  <button class="btn" onclick="go('data')">Import data</button></div>`;
 }
 
-/* ---- Today: what to lift next ---- */
+/* ================================================================= TRAIN
+   One question: what do I lift next? Nothing else on this screen. */
 function viewToday(){
-  const rows=A.progress.filter(p=>p.n>=1).map(p=>{
-    const cfg=DB.configs[p.name]||defaultConfig(p.name,p.muscles);
-    const hist=p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met}));
-    const pr=nextPrescription(hist,cfg);
-    return {p,pr,cfg};
-  });
-  // Lead with what is stalling or sliding — that is where a decision is owed.
-  const order={regressing:0,stalled:1,noisy:2,tooFew:3,progressing:4};
-  rows.sort((a,b)=>(order[a.p.verdict]??9)-(order[b.p.verdict]??9));
+  const tpls=A.templates||[];
+  if(!tpls.length)return viewAllLifts();
+  if(tplIdx>=tpls.length)tplIdx=0;
+  const t=tpls[tplIdx];
 
-  const list=rows.map(({p,pr})=>{
-    const [cls,label]=BADGE[pr.decision]||["",""];
-    const line=pr.weight==null?"Set a starting weight":
-      `${pr.weight} lb × ${pr.targetReps} × ${pr.sets} sets`;
-    return `<button class="ex" onclick="showWhy('${esc(p.name).replace(/'/g,"\\'")}')">
-      <span><span class="name">${esc(p.name)}</span><span class="presc">${line}</span></span>
-      <span class="badge ${cls}">${esc(label)}</span></button>`;
+  const rail=tpls.map((x,i)=>{
+    const short=x.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
+                       .replace(/\s*(Evening|Afternoon|Morning)\s*/i," ")
+                       .replace(/\s*Strength Session\s*$/i,"").trim();
+    return `<button aria-pressed="${i===tplIdx}" onclick="tplIdx=${i};render()">${esc(short.slice(0,26))}</button>`;
   }).join("");
 
-  return `<header><h1>Next session</h1><span class="sub">${A.sessions} sessions · ${A.end}</span></header>
-  <p class="cap">Prescriptions from double progression: hold the load and add a rep until you top the
-  range on every set, then add the smallest jump. Tap any lift for the reasoning.</p>
-  <div class="card">${list}</div>`;
+  const cards=t.exercises.map((name,i)=>{
+    const p=A.progress.find(x=>x.name===name);
+    if(!p)return "";
+    const pr=prescFor(p),st=STATUS[pr.decision]||{c:"--hold",t:""};
+    const load=pr.weight==null?`<span class="kg">—</span>`:
+      `<span class="kg">${pr.weight}</span><span class="unit">lb</span>`;
+    return `<button class="ex" style="--c:var(${st.c})" onclick="detail='${q(name)}';render()">
+      <div class="top">
+        <div style="min-width:0">
+          <div class="nm">${esc(name)}</div>
+          <div class="mg">${i+1} of ${t.exercises.length} · <em>${esc(nice((p.muscles||[])[0]||""))}</em></div>
+        </div>
+        <span class="chip">${st.t}</span>
+      </div>
+      <div class="load">${load}
+        <span class="xs">× ${pr.targetReps} reps × ${pr.sets} sets</span></div>
+      <div class="dots">${Array.from({length:pr.sets},()=>"<i></i>").join("")}</div>
+      <div class="why">${esc(pr.reason)}</div>
+    </button>`;
+  }).join("");
+
+  const ago=daysAgo(t.lastDate);
+  return `<div class="row between" style="margin-bottom:14px">
+    <div><div class="lbl">Up next</div><div class="h1" style="margin-top:4px">${esc(
+      t.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
+             .replace(/\s*Strength Session\s*$/i,"").trim())}</div></div></div>
+  <div class="sub" style="margin:-8px 0 14px">Last done ${ago} day${ago===1?"":"s"} ago · ${t.exercises.length} exercises</div>
+  <div class="rail">${rail}</div>
+  ${cards}
+  <button class="btn quiet" onclick="tab='allLifts';detail=null;$('app').innerHTML=viewAllLifts()">See all ${A.progress.length} lifts →</button>`;
 }
-function showWhy(name){
-  const p=A.progress.find(x=>x.name===name);if(!p)return;
-  const cfg=DB.configs[name]||defaultConfig(name,p.muscles);
-  const pr=nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met})),cfg);
-  const hist=p.pts.slice(-6).map(x=>`${shortDate(x.date)} — ${x.sets.map(s=>`${s.reps}×${s.weight}`).join("  ")}`).join("\n");
-  alert(`${name}\n\n${pr.reason}\n\nTrend: ${p.slope>0?"+":""}${p.slope} lb/wk (R² ${p.r2}, ${p.n} sessions) — ${p.verdict}\n\nRecent:\n${hist}`);
+function viewAllLifts(){
+  const order={regressing:0,stalled:1,noisy:2,tooFew:3,progressing:4};
+  const rows=A.progress.slice().sort((a,b)=>(order[a.verdict]??9)-(order[b.verdict]??9)).map(p=>{
+    const pr=prescFor(p),st=STATUS[pr.decision]||{c:"--hold",t:""};
+    return `<button class="ex" style="--c:var(${st.c})" onclick="detail='${q(p.name)}';render()">
+      <div class="top"><div style="min-width:0"><div class="nm">${esc(p.name)}</div>
+        <div class="mg"><em>${esc(nice((p.muscles||[])[0]||""))}</em></div></div>
+        <span class="chip">${st.t}</span></div>
+      <div class="load">${pr.weight==null?'<span class="kg">—</span>':
+        `<span class="kg">${pr.weight}</span><span class="unit">lb</span>`}
+        <span class="xs">× ${pr.targetReps} × ${pr.sets}</span></div></button>`;
+  }).join("");
+  return `<div class="h1" style="margin-bottom:4px">All lifts</div>
+   <div class="sub" style="margin-bottom:14px">Ordered by what needs a decision first.</div>
+   ${rows}<button class="btn quiet" onclick="go('today')">← Back to session</button>`;
 }
 
-/* ---- Insights ---- */
-function viewInsights(){
-  const under=A.volume.filter(v=>v.status==="under"||v.status==="zero").length;
-  return `<header><h1>Insights</h1><span class="sub">${A.start} → ${A.end}</span></header>
-  <div class="tiles">
-   <div class="tile"><div class="l">Sessions</div><div class="v">${A.sessions}</div>
-     <div class="d">${(A.sessions/A.weeks).toFixed(1)}/wk over ${A.weeks} weeks</div></div>
-   <div class="tile"><div class="l">Rest : work</div><div class="v">${A.ratio}:1</div>
-     <div class="d">${A.restMed}s rest vs ${Math.round(A.tutMed)}s set</div></div>
-   <div class="tile"><div class="l">Below minimum</div><div class="v" style="color:var(--critical)">${under}<span style="font-size:15px;color:var(--muted)"> of ${A.volume.length}</span></div>
-     <div class="d">muscle groups under the floor</div></div>
-   <div class="tile"><div class="l">Volume</div><div class="v">${(A.totalVolume/1000).toFixed(0)}K</div>
-     <div class="d">lb, per-limb loads doubled</div></div>
+/* ---- detail: tier two of progressive disclosure ---- */
+function viewDetail(){
+  const p=A.progress.find(x=>x.name===detail);
+  if(!p){detail=null;return viewToday();}
+  const cfg=cfgFor(p),pr=prescFor(p),st=STATUS[pr.decision]||{c:"--hold",t:""};
+  const last=p.pts[p.pts.length-1];
+  const cur=(DB.rpe[p.name]&&DB.rpe[p.name][last.date])||null;
+  const rpe=[6,7,8,9,10].map(v=>`<button aria-pressed="${cur===v}"
+    onclick="setRPE('${q(p.name)}','${last.date}',${v})">${v}</button>`).join("");
+  const hist=p.pts.slice(-8).reverse().map(x=>{
+    const r=(DB.rpe[p.name]&&DB.rpe[p.name][x.date])||null;
+    return `<div class="hist"><span style="color:var(--ink-2)">${shortDate(x.date)}</span>
+      <span>${x.sets.map(s=>`${s.reps}×${s.weight}`).join("  ")}${r?` <span class="tiny">@${r}</span>`:""}</span></div>`;
+  }).join("");
+  return `<button class="btn quiet" style="text-align:left;padding-left:0" onclick="detail=null;render()">← Back</button>
+  <div class="h1" style="font-size:23px;margin-bottom:14px">${esc(p.name)}</div>
+  <div class="hero" style="--c:var(${st.c})">
+    <div class="lbl">Next session</div>
+    <div class="big">${pr.weight==null?"—":pr.weight}<span style="font-size:20px;font-weight:600;color:var(--ink-2)">${pr.weight==null?"":" lb"}</span></div>
+    <div class="sub" style="margin-bottom:12px">${pr.targetReps} reps × ${pr.sets} sets</div>
+    <div class="sub">${esc(pr.reason)}</div>
   </div>
-  <div class="card">${FIND.map((f,i)=>
-    `<div class="finding"><div class="rank ${f.sev}">${i+1}</div>
-     <div><h3>${f.t}</h3><p>${f.d}</p></div></div>`).join("")}</div>
-  <h2 style="margin-top:22px">Weekly sets per muscle</h2>
-  <p class="cap">Bar is your weekly rate; the pale band is the range that generally drives growth.
-  A set counts toward every muscle Motra tags — generous, so reality is lower than shown.</p>
-  <div class="legend">
-   <span><i class="sw" style="background:var(--good)"></i>in range</span>
-   <span><i class="sw" style="background:var(--warning)"></i>below minimum</span>
-   <span><i class="sw" style="background:var(--grid)"></i>target range</span></div>
-  <div class="card"><div id="volchart"></div></div>`;
+  <div class="card"><div class="h2">How hard was ${shortDate(last.date)}?</div>
+    <div class="sub" style="margin-bottom:13px">10 = nothing left. 8 = about two reps in reserve.
+      Motra cannot export this, so it exists only if you tap it — and it unlocks holding at
+      RPE ≥${cfg.rpeCap} and double jumps at ≤${cfg.easyRPE}.</div>
+    <div class="rpe">${rpe}</div>
+    ${cur?`<button class="btn quiet" style="margin-top:8px" onclick="setRPE('${q(p.name)}','${last.date}',null)">Clear</button>`:""}
+  </div>
+  <div class="card"><div class="h2">Loadable weights</div>
+    <div class="sub">${p.increment?`Step <b>${p.increment} lb</b>, learned from every weight you have
+      used here — so prescriptions land on numbers this equipment can make.`:
+      `Not enough distinct weights yet; using the ${cfg.increment} lb default for its muscle group.`}</div>
+    <div class="sub" style="margin-top:8px;color:var(--ink-3)">${p.ladder.length?p.ladder.join(" · ")+" lb":"—"}</div>
+  </div>
+  <div class="card"><div class="h2">Last 8 sessions</div>
+    <div class="sub" style="margin-bottom:8px">${p.slope>0?"+":""}${p.slope} lb/week of estimated 1RM ·
+      R² ${p.r2.toFixed(2)} · ${p.r2<0.4?"low R², treat as noise":"well fitted"}</div>
+    ${hist}</div>
+  <div style="height:20px"></div>`;
+}
+function setRPE(name,date,v){
+  DB.rpe=DB.rpe||{};DB.rpe[name]=DB.rpe[name]||{};
+  if(v===null)delete DB.rpe[name][date];else DB.rpe[name][date]=v;
+  save();recompute();render();
 }
 
-function drawVolume(){
-  const host=$("volchart");if(!host)return;
-  const rows=A.volume,W=560,ml=86,mr=46,top=8,rh=29,H=top+rows.length*rh+18;
-  const max=Math.max(...rows.map(r=>Math.max(r.hi,r.perWeek)))*1.1;
-  const x=v=>ml+v/max*(W-ml-mr);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly sets per muscle against target ranges">`;
-  for(let g=0;g<=max;g+=5)s+=`<line x1="${x(g)}" x2="${x(g)}" y1="${top}" y2="${top+rows.length*rh-8}" stroke="${C('--grid')}"/>
-   <text x="${x(g)}" y="${H-4}" font-size="10" fill="${C('--muted')}" text-anchor="middle">${g}</text>`;
-  rows.forEach((r,i)=>{
-   const y=top+i*rh,col=r.status==="ok"?C('--good'):C('--warning');
-   s+=`<text x="${ml-8}" y="${y+15}" font-size="12" fill="${C('--text-secondary')}" text-anchor="end">${nice(r.muscle)}</text>
-    <rect x="${x(r.lo)}" y="${y+2}" width="${Math.max(0,x(r.hi)-x(r.lo))}" height="18" rx="3" fill="${C('--grid')}"/>
-    <rect x="${ml}" y="${y+6}" width="${Math.max(2,x(r.perWeek)-ml)}" height="10" rx="3" fill="${col}"/>
-    <text x="${W-mr+7}" y="${y+15}" font-size="12" fill="${C('--text-primary')}" style="font-variant-numeric:tabular-nums">${r.perWeek}</text>`;
+/* ================================================================= INSIGHTS
+   One hero number, then findings gated behind a tap. */
+function viewInsights(){
+  // Skip forearms and lower back: worked indirectly, so 'add sets here' misleads.
+  const INC=new Set(["forearms","lowerBack"]);
+  const top=A.volume.filter(v=>v.sets>0&&!INC.has(v.muscle))[0]||A.volume[0];
+  const shown=showAllFind?FIND:FIND.slice(0,2);
+  const cmap={crit:"--stop",warn:"--hold",info:"--accent",good:"--go"};
+  return `<div class="h1" style="margin-bottom:14px">Insights</div>
+  <div class="hero">
+    <div class="lbl">Biggest lever right now</div>
+    <div class="big">${A.ratio}:1</div>
+    <div class="cap">You rest ${A.restMed}s between sets that last ${A.tutMed}s.
+      Cutting isolation rest to 60–90s is free volume — the same session, more work.</div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="lbl">Add sets here first</div>
+      <div class="v" style="text-transform:capitalize">${esc(nice(top.muscle))}</div>
+      <div class="d">${top.perWeek}/wk · next set worth ${top.marginal}% of your first</div></div>
+    <div class="tile"><div class="lbl">Sessions</div><div class="v">${A.sessions}</div>
+      <div class="d">${(A.sessions/A.weeks).toFixed(1)}/wk across ${A.weeks} weeks</div></div>
+  </div>
+  <div class="card">${shown.map(f=>
+    `<div class="find" style="--c:var(${cmap[f.sev]||"--accent"})"><div class="dot"></div>
+     <div><h3>${f.t}</h3><p>${f.d}</p></div></div>`).join("")}
+    ${FIND.length>2?`<button class="btn quiet" style="margin:6px 0 0" onclick="showAllFind=${!showAllFind};render()">
+      ${showAllFind?"Show less":`Show ${FIND.length-2} more`}</button>`:""}
+  </div>
+  <div class="h2" style="margin-top:24px">Where a set is worth most</div>
+  <div class="sub" style="margin-bottom:12px">Volume drives growth with diminishing returns and no
+   observed plateau (Pelland et al. 2025 — 67 studies, 2,058 people). A dial, not a threshold.</div>
+  <div class="card"><div id="dose"></div></div>
+  <div class="card"><table><thead><tr><th>Muscle</th><th>Sets/wk</th><th>Days/wk</th><th>Next set</th></tr></thead>
+   <tbody>${A.volume.filter(v=>v.sets>0).map(v=>`<tr><td style="text-transform:capitalize">${esc(nice(v.muscle))}</td>
+    <td>${v.perWeek}</td><td>${v.freqPerWeek}</td>
+    <td style="color:var(${v.marginal>=50?"--go":v.marginal>=35?"--hold":"--ink-3"})">${v.marginal}%</td></tr>`).join("")}
+   </tbody></table>
+   <div class="tiny" style="margin-top:12px;line-height:1.5">Fitted to the <b>shape</b> that
+    meta-regression reports, not its coefficients — it ranks where to add volume, it does not predict
+    how much you will gain. Frequency helps <b>strength</b>; its hypertrophy effect is negligible at
+    matched volume.</div></div>`;
+}
+function drawDose(){
+  const host=$("dose");if(!host||!A.doseCurve)return;
+  const cv=A.doseCurve,W=560,H=200,ml=16,mr=16,mt=24,mb=30;
+  const X=n=>ml+n/30*(W-ml-mr),Y=v=>mt+(1-v/100)*(H-mt-mb);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diminishing returns of weekly sets with your muscles plotted">`;
+  for(let g=0;g<=30;g+=10)s+=`<line x1="${X(g)}" x2="${X(g)}" y1="${mt}" y2="${H-mb}" stroke="${C('--line')}"/>
+    <text x="${X(g)}" y="${H-14}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="middle">${g}</text>`;
+  s+=`<path d="${cv.map((p,i)=>`${i?"L":"M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"
+    fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  const placed=[];
+  A.volume.filter(v=>v.sets>0).forEach(v=>{
+    const x=X(v.perWeek),y=Y(Math.log(1+v.perWeek/5)/Math.log(7)*100);
+    const col=C(v.marginal>=50?"--go":v.marginal>=35?"--hold":"--ink-3");
+    s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${col}" stroke="${C('--card')}" stroke-width="2.5"/>`;
+    let ly=y-11;while(placed.some(p=>Math.abs(p.x-x)<58&&Math.abs(p.y-ly)<12))ly-=12;
+    placed.push({x,y:ly});
+    s+=`<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" fill="${C('--ink-2')}" text-anchor="middle">${nice(v.muscle)}</text>`;
   });
+  s+=`<text x="${W/2}" y="${H-2}" font-size="10" fill="${C('--ink-3')}" text-anchor="middle">weekly sets</text>`;
   host.innerHTML=s+"</svg>";
 }
 
-/* ---- Trends ---- */
+/* ================================================================= TRENDS */
 function viewTrends(){
   const withN=A.progress.filter(p=>p.n>=3);
   if(!trendEx||!withN.find(p=>p.name===trendEx))trendEx=withN.length?withN[withN.length-1].name:null;
-  const chips=withN.map(p=>`<button class="chip" aria-pressed="${p.name===trendEx}"
-    onclick="trendEx='${esc(p.name).replace(/'/g,"\\'")}';render()">${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</button>`).join("");
-  const cls=v=>v==="progressing"?"p-prog":v==="regressing"?"p-reg":v==="stalled"?"p-flat":"p-noise";
-  const lbl=v=>v==="progressing"?"▲ progressing":v==="regressing"?"▼ regressing":v==="stalled"?"■ stalled":"~ noisy";
-
+  const rail=withN.map(p=>`<button aria-pressed="${p.name===trendEx}"
+    onclick="trendEx='${q(p.name)}';render()">${esc(p.name.length>20?p.name.slice(0,19)+"…":p.name)}</button>`).join("");
+  const vc={progressing:"--go",regressing:"--stop",stalled:"--hold"};
   const comp=A.comp&&A.comp.leanMass?`
-   <h2 style="margin:0 0 8px">Body composition</h2>
-   <p class="cap">Endpoint means, not just the fitted slope — a hump mid-window can produce a
-   significant-looking trend with almost no net change.</p>
-   <div class="card"><table><thead><tr><th>Metric</th><th>First 5</th><th>Last 5</th><th>Net</th><th>n</th></tr></thead><tbody>
-   ${["weight","leanMass","bodyFat","restingHR","hrv"].filter(k=>A.comp[k]).map(k=>{
-     const c=A.comp[k];
+   <div class="h2" style="margin-top:24px">Body composition</div>
+   <div class="sub" style="margin-bottom:12px">Endpoint means, not just the fitted slope — a mid-window
+    hump can make a flat trend look significant.</div>
+   <div class="card"><table><thead><tr><th>Metric</th><th>First 5</th><th>Last 5</th><th>Net</th></tr></thead><tbody>
+   ${["weight","leanMass","bodyFat","restingHR","hrv"].filter(k=>A.comp[k]).map(k=>{const c=A.comp[k];
      return `<tr><td>${({weight:"Weight",leanMass:"Lean mass",bodyFat:"Body fat %",restingHR:"Resting HR",hrv:"HRV"})[k]}</td>
-      <td>${c.first5}</td><td>${c.last5}</td>
-      <td style="color:${c.net<0?'var(--critical)':c.net>0?'var(--good)':'var(--muted)'}">${c.net>0?"+":""}${c.net}</td>
-      <td>${c.n}</td></tr>`;}).join("")}
+     <td>${c.first5}</td><td>${c.last5}</td>
+     <td style="color:var(${c.net<0?"--stop":c.net>0?"--go":"--ink-3"})">${c.net>0?"+":""}${c.net}</td></tr>`;}).join("")}
    </tbody></table></div>`:
-   `<div class="card"><p class="small secondary" style="margin:0">No Health data loaded. Import a
-    Health Auto Export JSON in <b>Data</b> to see weight, lean mass, body fat, resting HR and HRV trends.</p></div>`;
-
-  return `<header><h1>Trends</h1></header>
+   `<div class="card"><div class="sub">No Health data yet. Import a Health Auto Export JSON in
+     <b>Data</b> for weight, lean mass, body fat, resting HR and HRV.</div></div>`;
+  return `<div class="h1" style="margin-bottom:14px">Trends</div>
   ${comp}
-  <h2 style="margin-top:22px">Per-lift progression</h2>
-  <div class="chips">${chips}</div>
-  <div class="card"><h2>${esc(trendEx||"")}</h2>
-    <p class="cap" id="trendcap"></p><div id="exchart"></div></div>
-  <h2 style="margin-top:22px">All lifts</h2>
-  <div class="card"><table><thead><tr><th>Lift</th><th>n</th><th>lb/wk</th><th>R²</th><th></th></tr></thead><tbody>
-   ${A.progress.filter(p=>p.n>=3).map(p=>`<tr><td>${esc(p.name.length>26?p.name.slice(0,25)+"…":p.name)}</td>
-     <td>${p.n}</td><td>${p.slope>0?"+":""}${p.slope}</td><td>${p.r2.toFixed(2)}</td>
-     <td><span class="pill ${cls(p.verdict)}">${lbl(p.verdict)}</span></td></tr>`).join("")}
-  </tbody></table></div>
-  <h2 style="margin-top:22px">Rest vs set duration</h2>
-  <p class="cap">Median rest against median time under tension, per lift.</p>
-  <div class="legend"><span><i class="sw" style="background:var(--series-1)"></i>rest</span>
-   <span><i class="sw" style="background:var(--series-2)"></i>under tension</span></div>
-  <div class="card"><div id="restchart"></div></div>`;
+  <div class="h2" style="margin-top:24px">Per-lift progression</div>
+  <div class="rail">${rail}</div>
+  <div class="card"><div class="h2" style="font-size:16px">${esc(trendEx||"")}</div>
+    <div class="sub" id="cap" style="margin-bottom:8px"></div><div id="chart"></div></div>
+  <div class="card"><table><thead><tr><th>Lift</th><th>lb/wk</th><th>R²</th><th></th></tr></thead><tbody>
+   ${withN.map(p=>`<tr><td>${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</td>
+    <td>${p.slope>0?"+":""}${p.slope}</td><td>${p.r2.toFixed(2)}</td>
+    <td style="color:var(${vc[p.verdict]||"--ink-3"})">${p.verdict==="progressing"?"rising":
+      p.verdict==="regressing"?"falling":p.verdict==="stalled"?"flat":"noisy"}</td></tr>`).join("")}
+  </tbody></table></div>`;
 }
-
 function drawTrends(){
-  const p=A.progress.find(x=>x.name===trendEx);
-  if(p){
-    const cap=$("trendcap");
-    if(cap)cap.textContent=`Estimated 1RM of the top set, ${p.n} sessions. `
-      +`${p.slope>0?"+":""}${p.slope} lb/week, R² ${p.r2.toFixed(2)} — `
-      +(p.r2<0.4?"low R² means the line explains little; treat as noise.":"a well-fitted trend.");
-    const host=$("exchart");
-    const pts=p.pts.map(x=>({d:x.date,v:x.e1rm}));
-    if(host&&pts.length>=2){
-      const W=560,H=200,ml=40,mr=44,mt=12,mb=26;
-      const ys=pts.map(q=>q.v),lo=Math.min(...ys),hi=Math.max(...ys);
-      const pad=(hi-lo)*.18||Math.max(2,hi*.05),y0=lo-pad,y1=hi+pad;
-      const X=i=>ml+i*(W-ml-mr)/(pts.length-1),Y=v=>mt+(1-(v-y0)/(y1-y0))*(H-mt-mb);
-      const path=pts.map((q,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(q.v).toFixed(1)}`).join(" ");
-      let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated one rep max over ${pts.length} sessions">`;
-      const step=Math.max(1,Math.round((y1-y0)/3));
-      for(let g=Math.ceil(y0/step)*step;g<=y1;g+=step)
-        s+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(g)}" y2="${Y(g)}" stroke="${C('--grid')}"/>
-         <text x="${ml-6}" y="${Y(g)+4}" font-size="10" fill="${C('--muted')}" text-anchor="end">${g}</text>`;
-      s+=`<path d="${path} L${X(pts.length-1).toFixed(1)},${H-mb} L${ml},${H-mb} Z" fill="${C('--series-1')}" opacity=".10"/>
-       <path d="${path}" fill="none" stroke="${C('--series-1')}" stroke-width="2" stroke-linejoin="round"/>
-       <circle cx="${X(pts.length-1)}" cy="${Y(ys[ys.length-1])}" r="4.5" fill="${C('--series-1')}" stroke="${C('--surface-1')}" stroke-width="2"/>
-       <text x="${X(pts.length-1)+8}" y="${Y(ys[ys.length-1])+4}" font-size="12" font-weight="600" fill="${C('--text-primary')}">${Math.round(ys[ys.length-1])}</text>
-       <text x="${ml}" y="${H-6}" font-size="10" fill="${C('--muted')}">${shortDate(pts[0].d)}</text>
-       <text x="${W-mr}" y="${H-6}" font-size="10" fill="${C('--muted')}" text-anchor="end">${shortDate(pts[pts.length-1].d)}</text>`;
-      host.innerHTML=s+"</svg>";
-    }
-  }
-  const rh=$("restchart");
-  if(rh){
-    const rows=A.restByEx.slice(0,14),W=560,ml=190,mr=48,top=10,gap=30,H=top+rows.length*gap+16;
-    const max=Math.max(...rows.map(r=>r.rest))*1.1;
-    const x=v=>ml+v/max*(W-ml-mr);
-    let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Median rest versus set duration per lift">`;
-    for(let g=0;g<=max;g+=60)s+=`<line x1="${x(g)}" x2="${x(g)}" y1="${top}" y2="${top+rows.length*gap-10}" stroke="${C('--grid')}"/>
-     <text x="${x(g)}" y="${H-3}" font-size="10" fill="${C('--muted')}" text-anchor="middle">${g/60}m</text>`;
-    rows.forEach((r,i)=>{
-     const y=top+i*gap,nm=r.name.length>25?r.name.slice(0,24)+"…":r.name;
-     s+=`<text x="${ml-8}" y="${y+13}" font-size="11.5" fill="${C('--text-secondary')}" text-anchor="end">${esc(nm)}</text>
-      <rect x="${ml}" y="${y+2}" width="${Math.max(2,x(r.rest)-ml)}" height="8" rx="3" fill="${C('--series-1')}"/>
-      <rect x="${ml}" y="${y+12}" width="${Math.max(2,x(r.tut)-ml)}" height="8" rx="3" fill="${C('--series-2')}"/>
-      <text x="${W-mr+6}" y="${y+13}" font-size="11" fill="${C('--text-primary')}" style="font-variant-numeric:tabular-nums">${Math.round(r.rest)}s</text>`;
-    });
-    rh.innerHTML=s+"</svg>";
-  }
+  const p=A.progress.find(x=>x.name===trendEx);if(!p)return;
+  const cap=$("cap");
+  if(cap)cap.textContent=`${p.n} sessions · ${p.slope>0?"+":""}${p.slope} lb/week · R² ${p.r2.toFixed(2)}`
+    +(p.r2<0.4?" — low R², treat as noise":"");
+  const host=$("chart"),pts=p.pts.map(x=>({d:x.date,v:x.e1rm}));
+  if(!host||pts.length<2)return;
+  const W=560,H=190,ml=8,mr=46,mt=14,mb=24;
+  const ys=pts.map(q=>q.v),lo=Math.min(...ys),hi=Math.max(...ys);
+  const pad=(hi-lo)*.2||Math.max(2,hi*.05),y0=lo-pad,y1=hi+pad;
+  const X=i=>ml+i*(W-ml-mr)/(pts.length-1),Y=v=>mt+(1-(v-y0)/(y1-y0))*(H-mt-mb);
+  const path=pts.map((q,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(q.v).toFixed(1)}`).join(" ");
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated one rep max across ${pts.length} sessions">
+    <path d="${path} L${X(pts.length-1).toFixed(1)},${H-mb} L${ml},${H-mb} Z" fill="${C('--accent')}" opacity=".12"/>
+    <path d="${path}" fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="${X(pts.length-1)}" cy="${Y(ys[ys.length-1])}" r="5" fill="${C('--accent')}" stroke="${C('--card')}" stroke-width="2.5"/>
+    <text x="${X(pts.length-1)+10}" y="${Y(ys[ys.length-1])+5}" font-size="14" font-weight="700" fill="${C('--ink')}">${Math.round(ys[ys.length-1])}</text>
+    <text x="${ml}" y="${H-6}" font-size="10.5" fill="${C('--ink-3')}">${shortDate(pts[0].d)}</text>
+    <text x="${W-mr}" y="${H-6}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="end">${shortDate(pts[pts.length-1].d)}</text>
+  </svg>`;
 }
 
-/* ---- Data ---- */
+/* ================================================================= DATA */
 function viewData(){
-  const w=DB.workouts.length;
-  return `<header><h1>Data</h1></header>
-  <div class="card">
-   <h2>Import</h2>
-   <p class="cap">Motra: Settings → Export Workout Data (arrives by email). Health: the
-   Health Auto Export app, or any JSON it produces. Nothing leaves your phone — parsing happens here.</p>
-   <label class="drop" style="display:block">
-     <b>Motra export</b><br><span class="tiny">.xlsx or .csv</span>
-     <input type="file" accept=".xlsx,.csv,.xls" style="display:none" onchange="importMotra(this)"></label>
-   <label class="drop" style="display:block">
-     <b>Health Auto Export</b><br><span class="tiny">.json</span>
-     <input type="file" accept=".json" style="display:none" onchange="importHealth(this)"></label>
-   <div id="importmsg" class="small"></div>
-  </div>
-  <div class="card">
-   <h2>Loaded</h2>
-   <div class="status"><span class="secondary">Sessions</span><span>${w||"—"}</span></div>
-   <div class="status"><span class="secondary">Sets</span><span>${A?A.totalSets:"—"}</span></div>
-   <div class="status"><span class="secondary">Range</span><span>${A?A.start+" → "+A.end:"—"}</span></div>
-   <div class="status"><span class="secondary">Fingerprint</span><span class="tiny">${DB.workouts.length?fingerprint(DB.workouts):"—"}</span></div>
-   <div class="status"><span class="secondary">App build</span><span class="tiny">${BUILD}</span></div>
-   <div class="status"><span class="secondary">Motra imported</span><span>${DB.importedAt||"never"}</span></div>
-   <div class="status"><span class="secondary">Health imported</span><span>${DB.healthAt||"never"}</span></div>
-   <div class="status"><span class="secondary">Health metrics</span><span>${DB.health?Object.keys(DB.health.metrics).length:0}</span></div>
-  </div>
-  <div class="card">
-   <h2>Backup</h2>
-   <p class="cap">Safari can clear web-app storage. Export occasionally — this file is your only copy.</p>
-   <button class="btn ghost" onclick="exportAll()">Export backup JSON</button>
+  return `<div class="h1" style="margin-bottom:14px">Data</div>
+  <div class="card"><div class="h2">Import</div>
+   <div class="sub" style="margin-bottom:14px">Motra: Settings → Export Workout Data (arrives by email).
+    Health: a Health Auto Export JSON. Everything is parsed on this device.</div>
+   <label class="drop"><b>Motra export</b><br><span class="tiny">.xlsx or .csv</span>
+    <input type="file" accept=".xlsx,.csv,.xls" style="display:none" onchange="importMotra(this)"></label>
+   <label class="drop"><b>Health export</b><br><span class="tiny">.json</span>
+    <input type="file" accept=".json" style="display:none" onchange="importHealth(this)"></label>
+   <div id="msg" class="sub"></div></div>
+  <div class="card"><div class="h2">Loaded</div>
+   <div class="st"><span>Sessions</span><span>${DB.workouts.length||"—"}</span></div>
+   <div class="st"><span>Sets</span><span>${A?A.totalSets:"—"}</span></div>
+   <div class="st"><span>Range</span><span>${A?A.start+" → "+A.end:"—"}</span></div>
+   <div class="st"><span>Health metrics</span><span>${DB.health?Object.keys(DB.health.metrics).length:0}</span></div>
+   <div class="st"><span>Fingerprint</span><span class="tiny">${DB.workouts.length?fingerprint(DB.workouts):"—"}</span></div>
+   <div class="st"><span>Build</span><span class="tiny">${BUILD}</span></div></div>
+  <div class="card"><div class="h2">Backup</div>
+   <div class="sub" style="margin-bottom:13px">Safari can clear web-app storage. Export occasionally.</div>
+   <button class="btn ghost" onclick="exportAll()">Export backup</button>
    <label class="btn ghost" style="display:block">Restore backup
-     <input type="file" accept=".json" style="display:none" onchange="restoreAll(this)"></label>
-   <button class="btn ghost" onclick="location.reload(true)||location.replace(location.pathname+'?v='+Date.now())">Force reload latest version</button>
-   <button class="btn danger" onclick="wipe()">Erase everything</button>
-  </div>
-  ${A&&A.flags.length?`<div class="card"><h2>Probable miscounts</h2>
-   <p class="cap">Rep jumps of 50%+ at the same or heavier load — very unlikely mid-run, so these
-   read as auto-count errors rather than performances.</p>
+    <input type="file" accept=".json" style="display:none" onchange="restoreAll(this)"></label>
+   <button class="btn ghost" onclick="location.replace(location.pathname+'?v='+Date.now())">Force latest version</button>
+   <button class="btn danger" onclick="wipe()">Erase everything</button></div>
+  ${A&&A.flags.length?`<div class="card"><div class="h2">Probable miscounts</div>
+   <div class="sub" style="margin-bottom:10px">Rep jumps of 50%+ at the same or heavier load — very
+    unlikely mid-run, so these read as auto-count errors.</div>
    <table><thead><tr><th>Date</th><th>Lift</th><th>Prev</th><th>Logged</th></tr></thead><tbody>
-   ${A.flags.map(f=>`<tr><td>${f.date.slice(5)}</td><td>${esc(f.name.slice(0,22))}</td><td>${f.prev}</td><td>${f.now}</td></tr>`).join("")}
-   </tbody></table></div>`:""}`;
+   ${A.flags.map(f=>`<tr><td>${f.date.slice(5)}</td><td>${esc(f.name.slice(0,20))}</td>
+     <td>${f.prev}</td><td>${f.now}</td></tr>`).join("")}</tbody></table></div>`:""}
+  <div style="height:20px"></div>`;
 }
-
-function msg(t,ok){const e=$("importmsg");if(e)e.innerHTML=`<span class="${ok?"ok":"bad"}">${t}</span>`;}
-
+function msg(t,ok){const e=$("msg");if(e)e.innerHTML=`<span style="color:var(${ok?"--go":"--stop"})">${t}</span>`;}
 function importMotra(input){
   const f=input.files[0];if(!f)return;
-  const isCSV=/\.csv$/i.test(f.name);
-  const r=new FileReader();
-  r.onload=()=>{
-    try{
-      let rows;
-      if(isCSV){
-        rows=String(r.result).split(/\r?\n/).map(line=>{
-          // Minimal CSV split honouring quoted fields.
-          const out=[];let cur="",q=false;
-          for(const ch of line){
-            if(ch==='"'){q=!q;} else if(ch===","&&!q){out.push(cur);cur="";} else cur+=ch;
-          }
-          out.push(cur);return out;
-        });
-      }else{
-        if(typeof XLSX==="undefined"){
-          msg("Spreadsheet reader unavailable offline. Connect once, or export Motra as CSV.",false);return;
-        }
-        const wb=XLSX.read(new Uint8Array(r.result),{type:"array"});
-        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,cellDates:true,defval:null});
-      }
-      const W=parseMotra(rows);
-      if(!W.length){msg("No workouts found in that file — is it the Motra export?",false);return;}
-      DB.workouts=W;DB.importedAt=new Date().toISOString().slice(0,10);
-      save();recompute();
-      msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.<br><span class="tiny muted">fingerprint ${fingerprint(W)}</span>`,true);
-      setTimeout(()=>go("insights"),700);
-    }catch(e){msg("Could not read that file: "+e.message,false);}
-  };
+  const isCSV=/\.csv$/i.test(f.name),r=new FileReader();
+  r.onload=()=>{try{
+    let rows;
+    if(isCSV){rows=String(r.result).split(/\r?\n/).map(line=>{
+      const out=[];let cur="",qt=false;
+      for(const ch of line){if(ch==='"'){qt=!qt;}else if(ch===","&&!qt){out.push(cur);cur="";}else cur+=ch;}
+      out.push(cur);return out;});
+    }else{
+      if(typeof XLSX==="undefined"){msg("Spreadsheet reader unavailable offline. Connect once, or export as CSV.",false);return;}
+      const wb=XLSX.read(new Uint8Array(r.result),{type:"array",cellDates:true});
+      rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,cellDates:true,defval:null});
+    }
+    const W=parseMotra(rows);
+    if(!W.length){msg("No workouts found — is that the Motra export?",false);return;}
+    DB.workouts=W;DB.importedAt=new Date().toISOString().slice(0,10);save();recompute();
+    msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.`,true);
+    setTimeout(()=>go("today"),700);
+  }catch(e){msg("Could not read that file: "+e.message,false);}};
   isCSV?r.readAsText(f):r.readAsArrayBuffer(f);
 }
-
 function importHealth(input){
-  const f=input.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{
-    try{
-      const H=parseHealthJSON(JSON.parse(r.result));
-      const n=Object.keys(H.metrics).length;
-      if(!n&&!H.workouts.length){msg("No recognisable metrics in that JSON.",false);return;}
-      DB.health=H;DB.healthAt=new Date().toISOString().slice(0,10);
-      save();recompute();
-      msg(`Imported ${n} metrics, ${H.workouts.length} workouts.`,true);
-      setTimeout(()=>go("trends"),700);
-    }catch(e){msg("Could not read that JSON: "+e.message,false);}
-  };
+  const f=input.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{
+    const H=parseHealthJSON(JSON.parse(r.result));
+    const n=Object.keys(H.metrics).length;
+    if(!n&&!H.workouts.length){msg("No recognisable metrics in that JSON.",false);return;}
+    DB.health=H;DB.healthAt=new Date().toISOString().slice(0,10);save();recompute();
+    msg(`Imported ${n} metrics.`,true);setTimeout(()=>go("trends"),700);
+  }catch(e){msg("Could not read that JSON: "+e.message,false);}};
   r.readAsText(f);
 }
-
 function exportAll(){
-  const b=new Blob([JSON.stringify(DB)],{type:"application/json"});
-  const a=document.createElement("a");
+  const b=new Blob([JSON.stringify(DB)],{type:"application/json"}),a=document.createElement("a");
   a.href=URL.createObjectURL(b);a.download=`ledger-${new Date().toISOString().slice(0,10)}.json`;
   a.click();URL.revokeObjectURL(a.href);
 }
@@ -996,16 +1186,12 @@ function restoreAll(input){
   r.onload=()=>{try{const d=JSON.parse(r.result);
     if(!d.workouts)throw new Error("not a Ledger backup");
     d.workouts.forEach(w=>{w.start=new Date(w.start);if(w.end)w.end=new Date(w.end);});
-    DB=d;save();recompute();render();alert("Restored.");
+    DB=d;DB.rpe=DB.rpe||{};save();recompute();render();alert("Restored.");
   }catch(e){alert("Could not restore: "+e.message);}};
   r.readAsText(f);
 }
-function wipe(){
-  if(confirm("Erase all imported data? Export a backup first if you want a copy.")){
-    DB={workouts:[],health:null,configs:{},importedAt:null,healthAt:null};
-    save();recompute();render();
-  }
-}
+function wipe(){if(confirm("Erase everything? Export a backup first if you want a copy.")){
+  DB={workouts:[],health:null,configs:{},rpe:{},importedAt:null,healthAt:null};save();recompute();render();}}
 
 render();
 </script>
