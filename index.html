@@ -136,6 +136,21 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 .rpe button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
 .hist{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px}
 .hist:last-child{border-bottom:none}
+.setrow{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.setrow:last-child{border-bottom:none}
+.setrow .num{width:26px;font-size:12px;color:var(--ink-3);font-weight:600}
+.setrow .val{flex:1;font-size:16px;font-variant-numeric:tabular-nums}
+.setrow .done{color:var(--go);font-weight:650}
+.tick{padding:9px 16px;border-radius:11px;background:var(--go);color:#fff;font-weight:650;font-size:14px}
+.tick.ghost{background:var(--card-2);border:1px solid var(--line);color:var(--ink-2);font-weight:550}
+.step{display:flex;align-items:center;gap:8px}
+.step button{width:42px;height:42px;border-radius:11px;border:1px solid var(--line);
+  font-size:20px;background:var(--card-2);display:flex;align-items:center;justify-content:center}
+.step .n{min-width:52px;text-align:center;font-size:23px;font-weight:700;font-variant-numeric:tabular-nums}
+.timer{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.mom{display:flex;gap:10px;margin-bottom:14px}
+.mom div{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px}
+.mom .v{font-size:21px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
 .empty{text-align:center;color:var(--ink-3);padding:50px 20px;font-size:14.5px;line-height:1.6}
 .drop{border:1.5px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;
   color:var(--ink-2);font-size:14px;margin-bottom:10px;display:block;background:var(--card-2)}
@@ -648,6 +663,57 @@ function judge(session, presc, cfg) {
   return w.slice(0, presc.sets).every((s) => s.reps >= presc.targetReps);
 }
 
+/* ------------------------------------------------- sessions logged in-app */
+
+/**
+ * Turn a session logged inside the app into the same shape as a parsed Motra
+ * workout, so everything downstream treats them identically.
+ *
+ * This is what closes the loop. Until now `met` was unset on every one of 141
+ * session records, which meant the stall counter could never increment and
+ * DELOAD — the safety rule that catches you grinding — was unreachable dead
+ * code. An imported Motra export cannot supply `met`, because it has no idea a
+ * prescription was ever issued. Only a session logged against a prescription can.
+ */
+function loggedToWorkout(logged) {
+  const sets = [];
+  logged.entries.forEach((e) => {
+    e.sets.forEach((st) => {
+      if (st.reps > 0) sets.push({
+        exercise: e.exercise, weight: st.weight, reps: st.reps,
+        seconds: st.seconds || 0, rest: st.rest || 0,
+        rpe: st.rpe ?? e.rpe ?? null, muscles: e.muscles || [],
+      });
+    });
+  });
+  return { title: logged.title || "Session", start: new Date(logged.date + "T12:00:00"),
+           end: null, durationS: logged.durationS || 0, totalSets: sets.length,
+           calories: 0, tvl: 0, zones: [0, 0, 0, 0, 0], sets,
+           source: "ledger", met: logged.met || {} };
+}
+
+/**
+ * Merge imported and in-app workouts. A Ledger session wins over a Motra one on
+ * the same day for the same exercises: it carries RPE and a prescription record,
+ * so it is strictly more informative.
+ */
+function mergeWorkouts(imported, logged) {
+  const out = (imported || []).slice();
+  (logged || []).forEach((l) => {
+    const w = loggedToWorkout(l);
+    const day = w.start.toISOString().slice(0, 10);
+    const mine = new Set(w.sets.map((s) => s.exercise));
+    for (let i = out.length - 1; i >= 0; i--) {
+      const o = out[i];
+      if (o.start.toISOString().slice(0, 10) !== day) continue;
+      o.sets = o.sets.filter((s) => !mine.has(s.exercise));
+      if (!o.sets.length) out.splice(i, 1);
+    }
+    out.push(w);
+  });
+  return out.sort((a, b) => a.start - b.start);
+}
+
 /* ---------------------------------------------------------------- analysis */
 
 function linreg(xs, ys) {
@@ -723,8 +789,10 @@ function analyse(workouts, health, rpeLog) {
     Object.entries(best).forEach(([name, { e, s }]) => {
       const day = w.start.toISOString().slice(0, 10);
       const rpe = (rpeLog[name] && rpeLog[name][day]) || null;
+      const metFlag = w.met && name in w.met ? w.met[name] : undefined;
       (byEx[name] = byEx[name] || []).push({
         date: day, e1rm: e, weight: s.weight, reps: s.reps, muscles: s.muscles, rpe,
+        met: metFlag,
         sets: w.sets.filter((x) => x.exercise === name)
                     .map((x) => ({ weight: x.weight, reps: x.reps, rpe })),
       });
@@ -839,7 +907,8 @@ function analyse(workouts, health, rpeLog) {
                return v ? Math.round((1 - v.top / v.all) * 100) : null; })(),
              topReps: topRepsByEx[name] || [],
              setCounts: setCountsByEx[name] || [],
-             pr: prs[name], muscles: pts[pts.length - 1].muscles, pts };
+             pr: prs[name], source: pts[pts.length - 1].source,
+             muscles: pts[pts.length - 1].muscles, pts };
   }).sort((a, b) => a.slope - b.slope);
 
   // Rest vs time under tension.
@@ -980,7 +1049,27 @@ function analyse(workouts, health, rpeLog) {
     doseCurve.push([n, +(Math.log(1 + n / DOSE_K) / Math.log(1 + 30 / DOSE_K) * 100).toFixed(1)]);
   }
 
-  return { templates, doseCurve, volumeTrend, prs, rampPct, topSets, allSets, warmSets, rampByEx,
+  // Momentum: the app was eight findings of what is wrong and nothing else.
+  const sessionDays = [...new Set(workouts.map((w) => w.start.toISOString().slice(0, 10)))].sort();
+  let streak = 0;
+  if (sessionDays.length) {
+    const last = new Date(sessionDays[sessionDays.length - 1]);
+    const gapOK = (a, b) => (new Date(b) - new Date(a)) / 864e5 <= 5;
+    streak = 1;
+    for (let i = sessionDays.length - 1; i > 0; i--) {
+      if (gapOK(sessionDays[i - 1], sessionDays[i])) streak++; else break;
+    }
+    if ((Date.now() - last) / 864e5 > 7) streak = 0;
+  }
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const prsThisMonth = Object.values(prs)
+    .filter((r) => r.bestE1RMDate && r.bestE1RMDate >= monthAgo).length;
+  const untrained = Object.keys(BOUNDS).filter((m) => !msets[m]);
+  const barely = Object.keys(BOUNDS)
+    .filter((m) => msets[m] && msets[m] / weeks < 2);
+
+  return { templates, doseCurve, volumeTrend, prs, rampPct,
+           streak, prsThisMonth, untrained, barely, sessionDays, topSets, allSets, warmSets, rampByEx,
            compoundRest: medOf(cRest), isolationRest: medOf(iRest), days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
            totalVolume: Math.round(workouts.reduce((a, w) =>
@@ -1067,7 +1156,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.4d74ead";
+const BUILD="2026-08-18.e4c66ce";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1078,14 +1167,15 @@ function load(){
   const raw=store.get(KEY);
   if(raw){try{const d=JSON.parse(raw);
     (d.workouts||[]).forEach(w=>{w.start=new Date(w.start);if(w.end)w.end=new Date(w.end);});
-    d.rpe=d.rpe||{};return d;}catch(e){console.warn("store unreadable; starting fresh");}}
-  return {workouts:[],health:null,configs:{},rpe:{},importedAt:null,healthAt:null};
+    d.rpe=d.rpe||{};d.logged=d.logged||[];d.active=d.active||null;return d;}catch(e){console.warn("store unreadable; starting fresh");}}
+  return {workouts:[],logged:[],active:null,health:null,configs:{},rpe:{},importedAt:null,healthAt:null};
 }
 function save(){store.set(KEY,JSON.stringify(DB));}
 let A=null,FIND=[];
 function recompute(){
-  if(!DB.workouts.length){A=null;FIND=[];return;}
-  A=analyse(DB.workouts,DB.health,DB.rpe||{});FIND=buildFindings(A);
+  const all=mergeWorkouts(DB.workouts,DB.logged||[]);
+  if(!all.length){A=null;FIND=[];return;}
+  A=analyse(all,DB.health,DB.rpe||{});FIND=buildFindings(A);
 }
 recompute();
 
@@ -1116,22 +1206,129 @@ const prescFor=p=>nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.
 
 /* ---------------------------------------------------------------- routing */
 let tab="today",detail=null,tplIdx=0,trendEx=null,showAllFind=false;
-function go(t){tab=t;detail=null;render();scrollTo(0,0);}
+function go(t){tab=t;detail=null;lastResult=null;render();scrollTo(0,0);}
+let railScroll=0;
 function render(){
+  const oldRail=document.querySelector(".rail");
+  if(oldRail)railScroll=oldRail.scrollLeft;
   document.querySelectorAll("nav button").forEach(b=>
     b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
   const el=$("app");
   if(!DB.workouts.length&&tab!=="data"){el.innerHTML=viewEmpty();return;}
+  if(DB.active){el.innerHTML=viewSession();return;}
   if(detail){el.innerHTML=viewDetail();return;}
   el.innerHTML=tab==="today"?viewToday():tab==="insights"?viewInsights():
                tab==="trends"?viewTrends():viewData();
   if(tab==="insights")drawDose();
   if(tab==="trends")drawTrends();
+  const r=document.querySelector(".rail");
+  if(r&&railScroll)r.scrollLeft=railScroll;
 }
 function viewEmpty(){
   return `<div style="padding-top:60px"><div class="h1">Ledger</div>
   <div class="empty">Nothing imported yet.<br>Open <b>Data</b> and add your Motra export.</div>
   <button class="btn" onclick="go('data')">Import data</button></div>`;
+}
+
+/* =============================================================== SESSION
+   The loop-closing piece. Until this existed the app told you what to lift and
+   never found out what you did, so `met` was never set, the stall counter never
+   incremented, and deload was unreachable dead code. */
+function startSession(){
+  const t=(A.templates||[])[tplIdx];if(!t)return;
+  const entries=(t.detail||t.exercises.map(n=>({name:n}))).map(d=>{
+    const p=A.progress.find(x=>x.name===d.name);
+    const pr=p?prescFor(p):null,cfg=p?cfgFor(p):null;
+    return {exercise:d.name,muscles:p?p.muscles:[],
+      target:{weight:pr&&pr.weight!=null?pr.weight:0,reps:pr?pr.targetReps:8,sets:pr?pr.sets:3},
+      prescription:pr?{decision:pr.decision,weight:pr.weight,targetReps:pr.targetReps,sets:pr.sets}:null,
+      cfg:cfg?{repMax:cfg.repMax,sets:cfg.sets}:null,
+      sets:[],rpe:null};
+  }).filter(e=>e.target.weight>0);
+  DB.active={date:new Date().toISOString().slice(0,10),title:t.title,entries,idx:0,
+             startedAt:Date.now(),lastSetAt:null};
+  save();render();
+}
+function logSet(reps){
+  const a=DB.active,e=a.entries[a.idx];
+  e.sets.push({weight:e.target.weight,reps,rest:a.lastSetAt?Math.round((Date.now()-a.lastSetAt)/1000):0});
+  a.lastSetAt=Date.now();save();render();
+}
+function undoSet(){const e=DB.active.entries[DB.active.idx];e.sets.pop();save();render();}
+function setEntryRPE(v){DB.active.entries[DB.active.idx].rpe=v;save();render();}
+function adjustTarget(d){
+  const e=DB.active.entries[DB.active.idx];
+  e.target.weight=Math.max(0,+(e.target.weight+d).toFixed(2));save();render();
+}
+function nextExercise(){
+  const a=DB.active;
+  if(a.idx<a.entries.length-1){a.idx++;a.lastSetAt=null;save();render();}
+  else finishSession();
+}
+function prevExercise(){if(DB.active.idx>0){DB.active.idx--;save();render();}}
+function finishSession(){
+  const a=DB.active,done=a.entries.filter(e=>e.sets.length);
+  if(!done.length){DB.active=null;save();render();return;}
+  // Judge each exercise against the prescription that was actually issued.
+  const met={};
+  done.forEach(e=>{
+    if(!e.prescription||e.prescription.weight==null){met[e.exercise]=null;return;}
+    const w=e.sets.filter(s=>s.weight>=e.prescription.weight-1e-6);
+    met[e.exercise]=w.length>=e.prescription.sets&&
+      w.slice(0,e.prescription.sets).every(s=>s.reps>=e.prescription.targetReps);
+  });
+  DB.logged=DB.logged||[];
+  DB.logged.push({date:a.date,title:a.title,durationS:Math.round((Date.now()-a.startedAt)/1000),
+    entries:done.map(e=>({exercise:e.exercise,muscles:e.muscles,rpe:e.rpe,sets:e.sets})),met});
+  done.forEach(e=>{if(e.rpe!=null){DB.rpe[e.exercise]=DB.rpe[e.exercise]||{};DB.rpe[e.exercise][a.date]=e.rpe;}});
+  DB.active=null;save();recompute();
+  const hit=Object.values(met).filter(v=>v===true).length;
+  lastResult={n:done.length,hit};tab="today";render();
+}
+let lastResult=null;
+
+function viewSession(){
+  const a=DB.active,e=a.entries[a.idx];
+  const remaining=Math.max(0,e.target.sets-e.sets.length);
+  const rest=a.lastSetAt?Math.round((Date.now()-a.lastSetAt)/1000):null;
+  const rows=e.sets.map((s,i)=>`<div class="setrow"><span class="num">${i+1}</span>
+    <span class="val done">${s.reps} × ${s.weight} lb</span>
+    ${i===e.sets.length-1?'<button class="tick ghost" onclick="undoSet()">Undo</button>':""}</div>`).join("");
+  const opts=[e.target.reps-2,e.target.reps-1,e.target.reps,e.target.reps+1,e.target.reps+2]
+    .filter(r=>r>0);
+  return `<div class="row between" style="margin-bottom:6px">
+    <span class="lbl">${a.idx+1} of ${a.entries.length} · ${esc(a.title.slice(0,26))}</span>
+    <button class="tiny" style="color:var(--ink-3)" onclick="finishSession()">Finish</button></div>
+  <div class="h1" style="font-size:23px;margin-bottom:12px">${esc(e.exercise)}</div>
+  <div class="card">
+    <div class="lbl">Target</div>
+    <div class="step" style="margin:8px 0 4px">
+      <button onclick="adjustTarget(-${(e.cfg&&cfgStep(e))||5})">−</button>
+      <span class="n" style="font-size:40px">${e.target.weight}</span>
+      <button onclick="adjustTarget(${(e.cfg&&cfgStep(e))||5})">+</button>
+      <span style="font-size:15px;color:var(--ink-2);margin-left:4px">lb × ${e.target.reps} × ${e.target.sets}</span>
+    </div>
+    ${rest!=null?`<div class="sub" style="margin-top:10px">Rested <b>${Math.floor(rest/60)}:${String(rest%60).padStart(2,"0")}</b> since last set</div>`:""}
+  </div>
+  ${e.sets.length?`<div class="card">${rows}</div>`:""}
+  <div class="card">
+    <div class="h2" style="margin-bottom:4px">${remaining?`Log set ${e.sets.length+1}`:"All sets done"}</div>
+    <div class="sub" style="margin-bottom:12px">${remaining?`${remaining} to go. Tap the reps you actually did.`:"Rate the effort, then move on."}</div>
+    ${remaining?`<div class="rpe">${opts.map(r=>`<button aria-pressed="${r===e.target.reps}"
+      onclick="logSet(${r})">${r}</button>`).join("")}</div>`:""}
+  </div>
+  ${e.sets.length?`<div class="card"><div class="h2" style="margin-bottom:4px">How hard was that?</div>
+    <div class="sub" style="margin-bottom:12px">Logged now, not from memory next week. RPE 10 = nothing left,
+      8 ≈ two reps in reserve.</div>
+    <div class="rpe">${[6,7,8,9,10].map(v=>`<button aria-pressed="${e.rpe===v}"
+      onclick="setEntryRPE(${v})">${v}</button>`).join("")}</div></div>`:""}
+  <button class="btn" onclick="nextExercise()">${a.idx<a.entries.length-1?"Next exercise →":"Finish session"}</button>
+  ${a.idx>0?`<button class="btn quiet" onclick="prevExercise()">← Previous</button>`:""}
+  <div style="height:20px"></div>`;
+}
+function cfgStep(e){
+  const p=A.progress.find(x=>x.name===e.exercise);
+  return p?cfgFor(p).increment:5;
 }
 
 /* ================================================================= TRAIN
@@ -1176,12 +1373,23 @@ function viewToday(){
   }).join("");
 
   const ago=daysAgo(t.lastDate);
-  return `<div class="row between" style="margin-bottom:14px">
+  const banner=lastResult?`<div class="card" style="border-color:var(--go)">
+    <div class="h2" style="margin:0 0 4px">Session saved</div>
+    <div class="sub">${lastResult.hit} of ${lastResult.n} exercises hit their target.
+      ${lastResult.hit===lastResult.n?"Everything you were asked for.":"The rest carry forward."}</div></div>`:"";
+  return banner+`<div class="mom">
+    <div><span class="lbl">Streak</span><div class="v">${A.streak}</div>
+      <div class="tiny">sessions unbroken</div></div>
+    <div><span class="lbl">PRs this month</span><div class="v">${A.prsThisMonth}</div>
+      <div class="tiny">across all lifts</div></div>
+  </div>
+  <div class="row between" style="margin-bottom:14px">
     <div><div class="lbl">Up next</div><div class="h1" style="margin-top:4px">${esc(
       t.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
              .replace(/\s*Strength Session\s*$/i,"").trim())}</div></div></div>
   <div class="sub" style="margin:-8px 0 14px">Last done ${ago} day${ago===1?"":"s"} ago · ${t.exercises.length} exercises</div>
   <div class="rail">${rail}</div>
+  <button class="btn" style="margin-bottom:14px" onclick="lastResult=null;startSession()">Start this session</button>
   ${cards}
   <button class="btn quiet" onclick="tab='allLifts';detail=null;$('app').innerHTML=viewAllLifts()">See all ${A.progress.length} lifts →</button>`;
 }
@@ -1413,12 +1621,16 @@ function viewTrends(){
   const withN=A.progress.filter(p=>p.n>=3);
   if(!trendEx||!withN.find(p=>p.name===trendEx))trendEx=withN.length?withN[withN.length-1].name:null;
   const rail=withN.map(p=>`<button aria-pressed="${p.name===trendEx}"
-    onclick="trendEx='${q(p.name)}';render()">${esc(p.name.length>20?p.name.slice(0,19)+"…":p.name)}</button>`).join("");
-  const vc={progressing:"--go",regressing:"--stop",stalled:"--hold"};
+    onclick="trendEx='${q(p.name)}';render()">${esc(p.name.length>20?p.name.slice(0,19)+"\u2026":p.name)}</button>`).join("");
+
+  const gapCard=((A.untrained||[]).length||(A.barely||[]).length)?`<div class="card" style="border-color:var(--hold)">
+    <div class="h2" style="margin-bottom:6px">Muscles you are barely training</div>
+    <div class="sub">${(A.untrained||[]).length?`<b>Never trained:</b> ${A.untrained.map(nice).join(", ")}. `:""}${(A.barely||[]).length?`<b>Under 2 sets a week:</b> ${A.barely.map(nice).join(", ")}.`:""}</div></div>`:"";
+
   const comp=A.comp&&A.comp.leanMass?`
    <div class="h2" style="margin-top:24px">Body composition</div>
-   <div class="sub" style="margin-bottom:12px">Endpoint means, not just the fitted slope — a mid-window
-    hump can make a flat trend look significant.</div>
+   <div class="sub" style="margin-bottom:12px">Average of your first five and last five readings \u2014
+    endpoints, not a fitted line, because a mid-window bump can make a flat trend look real.</div>
    <div class="card"><table><thead><tr><th>Metric</th><th>First 5</th><th>Last 5</th><th>Net</th></tr></thead><tbody>
    ${["weight","leanMass","bodyFat","restingHR","hrv"].filter(k=>A.comp[k]).map(k=>{const c=A.comp[k];
      return `<tr><td>${({weight:"Weight",leanMass:"Lean mass",bodyFat:"Body fat %",restingHR:"Resting HR",hrv:"HRV"})[k]}</td>
@@ -1427,39 +1639,73 @@ function viewTrends(){
    </tbody></table></div>`:
    `<div class="card"><div class="sub">No Health data yet. Import a Health Auto Export JSON in
      <b>Data</b> for weight, lean mass, body fat, resting HR and HRV.</div></div>`;
+
   return `<div class="h1" style="margin-bottom:14px">Trends</div>
-  ${comp}
-  <div class="h2" style="margin-top:24px">Per-lift progression</div>
+  ${gapCard}
+  <div class="h2" style="margin-top:20px">Strength per lift</div>
+  <div class="sub" style="margin-bottom:12px">Your <b>estimated max</b> \u2014 the heaviest single rep you
+   could probably manage, worked out from the weight and reps you actually did. An estimate, not a test.</div>
   <div class="rail">${rail}</div>
   <div class="card"><div class="h2" style="font-size:16px">${esc(trendEx||"")}</div>
-    <div class="sub" id="cap" style="margin-bottom:8px"></div><div id="chart"></div></div>
-  <div class="card"><table><thead><tr><th>Lift</th><th>lb/wk</th><th>R²</th><th></th></tr></thead><tbody>
-   ${withN.map(p=>`<tr><td>${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</td>
-    <td>${p.slope>0?"+":""}${p.slope}</td><td>${p.r2.toFixed(2)}</td>
-    <td style="color:var(${vc[p.verdict]||"--ink-3"})">${p.verdict==="progressing"?"rising":
-      p.verdict==="regressing"?"falling":p.verdict==="stalled"?"flat":"noisy"}</td></tr>`).join("")}
-  </tbody></table></div>`;
+    <div class="sub" id="cap" style="margin-bottom:10px"></div><div id="chart"></div>
+    <div class="sub" id="cap2" style="margin-top:12px"></div></div>
+  <div class="h2" style="margin-top:24px">Every lift, plainly</div>
+  <div class="sub" style="margin-bottom:12px">Change in estimated max from your first logged session to
+   your most recent, and whether the pattern is consistent enough to mean anything.</div>
+  <div class="card"><table><thead><tr><th>Lift</th><th>Change</th><th>Confidence</th></tr></thead><tbody>
+   ${withN.slice().sort((a,b)=>(a.last-a.first)-(b.last-b.first)).map(p=>{
+     const d=Math.round(p.last-p.first);
+     const conf=p.r2>=0.6?"clear":p.r2>=0.3?"rough":"too noisy";
+     const col=Math.abs(d)<2?"--ink-3":d>0?"--go":"--stop";
+     return `<tr><td>${esc(p.name.length>24?p.name.slice(0,23)+"\u2026":p.name)}</td>
+      <td style="color:var(${col})">${d>0?"+":""}${d} lb</td>
+      <td style="color:var(--ink-3)">${conf}</td></tr>`;}).join("")}
+  </tbody></table>
+  <div class="tiny" style="margin-top:12px;line-height:1.5"><b>Confidence</b> is how tidily the points
+   line up. <b>Clear</b> means a consistent direction. <b>Too noisy</b> means it moved around so much the
+   direction is not trustworthy \u2014 treat those as flat.</div></div>
+  ${comp}`;
 }
+
 function drawTrends(){
   const p=A.progress.find(x=>x.name===trendEx);if(!p)return;
+  const pts=p.pts.map(x=>({d:x.date,v:x.e1rm}));
+  const first=pts[0],last=pts[pts.length-1];
+  const weeks=Math.max(1,Math.round((new Date(last.d)-new Date(first.d))/6048e5));
+  const delta=Math.round(last.v-first.v);
   const cap=$("cap");
-  if(cap)cap.textContent=`${p.n} sessions · ${p.slope>0?"+":""}${p.slope} lb/week · R² ${p.r2.toFixed(2)}`
-    +(p.r2<0.4?" — low R², treat as noise":"");
-  const host=$("chart"),pts=p.pts.map(x=>({d:x.date,v:x.e1rm}));
-  if(!host||pts.length<2)return;
-  const W=560,H=190,ml=8,mr=46,mt=14,mb=24;
-  const ys=pts.map(q=>q.v),lo=Math.min(...ys),hi=Math.max(...ys);
-  const pad=(hi-lo)*.2||Math.max(2,hi*.05),y0=lo-pad,y1=hi+pad;
+  if(cap)cap.innerHTML=`Estimated max went from <b>${Math.round(first.v)} lb</b> to <b>${Math.round(last.v)} lb</b>
+    over ${weeks} week${weeks===1?"":"s"} \u2014
+    <b style="color:var(${Math.abs(delta)<2?"--ink-3":delta>0?"--go":"--stop"})">${delta>0?"up "+delta+" lb":delta<0?"down "+Math.abs(delta)+" lb":"no change"}</b>
+    across ${p.n} sessions.`;
+  const cap2=$("cap2");
+  if(cap2)cap2.textContent=p.r2>=0.6?"The points line up consistently, so this direction is trustworthy.":
+    p.r2>=0.3?"The points wander a bit \u2014 the direction is probably real but not certain.":
+    "The points jump around too much to call a direction. Treat this as flat.";
+
+  const host=$("chart");if(!host||pts.length<2)return;
+  const W=560,H=210,ml=44,mr=54,mt=24,mb=28;
+  const ys=pts.map(z=>z.v),lo=Math.min(...ys),hi=Math.max(...ys);
+  const pad=(hi-lo)*.22||Math.max(2,hi*.05),y0=lo-pad,y1=hi+pad;
   const X=i=>ml+i*(W-ml-mr)/(pts.length-1),Y=v=>mt+(1-(v-y0)/(y1-y0))*(H-mt-mb);
-  const path=pts.map((q,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(q.v).toFixed(1)}`).join(" ");
-  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated one rep max across ${pts.length} sessions">
-    <path d="${path} L${X(pts.length-1).toFixed(1)},${H-mb} L${ml},${H-mb} Z" fill="${C('--accent')}" opacity=".12"/>
-    <path d="${path}" fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>
-    <circle cx="${X(pts.length-1)}" cy="${Y(ys[ys.length-1])}" r="5" fill="${C('--accent')}" stroke="${C('--card')}" stroke-width="2.5"/>
-    <text x="${X(pts.length-1)+10}" y="${Y(ys[ys.length-1])+5}" font-size="14" font-weight="700" fill="${C('--ink')}">${Math.round(ys[ys.length-1])}</text>
-    <text x="${ml}" y="${H-6}" font-size="10.5" fill="${C('--ink-3')}">${shortDate(pts[0].d)}</text>
-    <text x="${W-mr}" y="${H-6}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="end">${shortDate(pts[pts.length-1].d)}</text>
+  const path=pts.map((z,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(z.v).toFixed(1)}`).join(" ");
+  const peakI=ys.indexOf(hi);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated max across ${pts.length} sessions from ${Math.round(first.v)} to ${Math.round(last.v)} pounds">`;
+  [lo,(lo+hi)/2,hi].forEach(v=>{s+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C('--line')}"/>
+    <text x="${ml-8}" y="${Y(v)+4}" font-size="11" fill="${C('--ink-3')}" text-anchor="end">${Math.round(v)}</text>`;});
+  s+=`<path d="${path} L${X(pts.length-1).toFixed(1)},${H-mb} L${ml},${H-mb} Z" fill="${C('--accent')}" opacity=".12"/>
+   <path d="${path}" fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  if(peakI!==pts.length-1&&peakI!==0)
+    s+=`<circle cx="${X(peakI)}" cy="${Y(hi)}" r="4" fill="${C('--ink-3')}" stroke="${C('--card')}" stroke-width="2"/>
+        <text x="${X(peakI)}" y="${Y(hi)-9}" font-size="11" fill="${C('--ink-3')}" text-anchor="middle">peak ${Math.round(hi)}</text>`;
+  s+=`<circle cx="${X(0)}" cy="${Y(first.v)}" r="4.5" fill="${C('--ink-3')}" stroke="${C('--card')}" stroke-width="2.5"/>
+   <text x="${X(0)}" y="${Y(first.v)+21}" font-size="11.5" font-weight="600" fill="${C('--ink-2')}">${Math.round(first.v)}</text>
+   <circle cx="${X(pts.length-1)}" cy="${Y(last.v)}" r="5.5" fill="${C('--accent')}" stroke="${C('--card')}" stroke-width="2.5"/>
+   <text x="${X(pts.length-1)+10}" y="${Y(last.v)+5}" font-size="15" font-weight="700" fill="${C('--ink')}">${Math.round(last.v)}</text>
+   <text x="${ml}" y="${H-6}" font-size="11" fill="${C('--ink-3')}">${shortDate(first.d)}</text>
+   <text x="${W-mr}" y="${H-6}" font-size="11" fill="${C('--ink-3')}" text-anchor="end">${shortDate(last.d)} \u00b7 latest</text>
   </svg>`;
+  host.innerHTML=s;
 }
 
 /* ================================================================= DATA */
@@ -1544,7 +1790,7 @@ function restoreAll(input){
   r.readAsText(f);
 }
 function wipe(){if(confirm("Erase everything? Export a backup first if you want a copy.")){
-  DB={workouts:[],health:null,configs:{},rpe:{},importedAt:null,healthAt:null};save();recompute();render();}}
+  DB={workouts:[],logged:[],active:null,health:null,configs:{},rpe:{},importedAt:null,healthAt:null};save();recompute();render();}}
 
 render();
 </script>
