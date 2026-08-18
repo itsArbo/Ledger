@@ -764,11 +764,32 @@ function analyse(workouts, health, rpeLog) {
     seen.forEach((m) => { (mdays[m] = mdays[m] || new Set()).add(day); });
   });
 
+  // Weeks in which each muscle was trained at all. A flat average hides the
+  // shape completely: 32 hamstring sets over 9.7 weeks reads as "3.3 a week",
+  // but the real pattern is 6-7 sets in five weeks and ZERO in the other five.
+  // 3.3 describes no week that actually happened.
+  const mWeeks = {};
+  workouts.forEach((w) => {
+    const d = new Date(w.start);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const k = d.toISOString().slice(0, 10);
+    const seen = new Set();
+    w.sets.forEach((s) => s.muscles.forEach((m) => seen.add(m)));
+    seen.forEach((m) => { (mWeeks[m] = mWeeks[m] || new Set()).add(k); });
+  });
+  const totalWeeks = new Set(workouts.map((w) => {
+    const d = new Date(w.start); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  })).size;
+
   const volume = Object.keys(BOUNDS).map((m) => {
     const n = msets[m] || 0, per = n / weeks, [lo, hi] = BOUNDS[m];
     const freq = (mdays[m] ? mdays[m].size : 0) / weeks;
+    const wkTrained = mWeeks[m] ? mWeeks[m].size : 0;
     return { muscle: m, sets: n, perWeek: +per.toFixed(1), lo, hi,
              freqPerWeek: +freq.toFixed(1),
+             weeksTrained: wkTrained, totalWeeks,
+             setsWhenTrained: wkTrained ? +(n / wkTrained).toFixed(1) : 0,
              marginal: +(marginalValue(per) * 100).toFixed(0),
              status: n === 0 ? "zero" : per < lo ? "under" : per > hi ? "over" : "ok" };
   }).sort((a, b) => b.marginal - a.marginal);
@@ -1271,7 +1292,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.8f53d1f";
+const BUILD="2026-08-18.dd14788";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
