@@ -936,6 +936,21 @@ function analyse(workouts, health, rpeLog) {
       if (new Set(live.map((x) => x.weight)).size >= 3) {
         const L = linreg(live.map((x) => x.weight / top), live.map((x) => x.reps));
         r.slopeSum += -L.slope * 0.10; r.slopeN++;
+        // Keep the most damning REAL session as an example. A formula does not
+        // land; "9 reps at 135 and 9 reps at 225" does. Pick the session with
+        // the biggest load spread at an identical rep count.
+        const byReps = {};
+        // Exclude anything under half the top load: an empty bar matching your
+        // top set on reps proves nothing, and citing it would be a cheap shot.
+        live.filter((x) => x.weight >= top * 0.5)
+            .forEach((x) => (byReps[x.reps] = byReps[x.reps] || []).push(x.weight));
+        Object.entries(byReps).forEach(([reps, wts]) => {
+          if (wts.length < 2) return;
+          const loW = Math.min(...wts), hiW = Math.max(...wts);
+          const spread = hiW - loW;
+          if (spread > 0 && (!r.example || spread > r.example.spread))
+            r.example = { reps: +reps, lo: loW, hi: hiW, spread };
+        });
       }
     });
   });
@@ -951,10 +966,27 @@ function analyse(workouts, health, rpeLog) {
       let verdict;
       if (r.blocks >= 2) verdict = mean > 0.25 ? "easy" : mean >= -0.25 ? "unknown" : "hard";
       else verdict = "noControl";
+      // Plain-English rendering. Every fitness product that ships a derived
+      // number ships a band label and a short consequence beside it (WHOOP
+      // Strain/Recovery, Garmin Training Readiness, Fitbit Daily Readiness);
+      // the number alone never travels. Counts round to whole reps: nobody
+      // performs 0.63 of a rep.
+      const whole = mean == null ? null : Math.sign(mean) * Math.round(Math.abs(mean));
+      const fadeLabel = mean == null ? "Only 1 set at this weight"
+        : whole > 0 ? `${whole} more rep${whole > 1 ? "s" : ""} by the last set`
+        : whole < 0 ? `${-whole} fewer rep${-whole > 1 ? "s" : ""} by the last set`
+        : "Same reps every set";
+      const band = { easy: "Too easy", unknown: "Can't tell", hard: "Hard enough",
+                     noControl: "Need a 2nd set" }[verdict];
+      const why = { easy: "Reps should drop as you tire. Yours go up.",
+                    unknown: "Reps never move, so nothing shows through.",
+                    hard: "Reps drop as you tire — that's what you want.",
+                    noControl: "You only do one set at this weight." }[verdict];
       return { name, blocks: r.blocks, conf: r.blocks >= 3 ? "ok" : "low",
-               mean: mean == null ? null : +mean.toFixed(2),
+               mean: mean == null ? null : +mean.toFixed(2), fadeLabel, band, why,
                up: r.up, flat: r.flat, down: r.down, sessions: r.sessions,
-               topPerSession: +perTop.toFixed(1),
+               topPerSession: +perTop.toFixed(1), topSetsWhole: Math.round(perTop),
+               example: r.example || null,
                slope: slope == null ? null : +slope.toFixed(2),
                rampWaste: slope == null ? null : Math.max(0, Math.round(100 * (1 - slope / MATCHED_EFFORT_LOSS))),
                roundPct: r.sets ? Math.round(100 * r.round / r.sets) : 0, verdict };
@@ -1178,10 +1210,14 @@ function analyse(workouts, health, rpeLog) {
   const rc = countBy(recentW), pc = countBy(priorW);
   const recWeeks = Math.max(1, (lastDay - cut) / 6048e5);
   const priWeeks = Math.max(1, (cut - prevCut) / 6048e5);
+  // Reported as TOTAL sets in each 4-week window, not a weekly average. "4.5
+  // sets a week" is a number nobody performs; "18 sets in 4 weeks" is a count
+  // of things that actually happened, and it needs no decimal point.
   const volumeTrend = Object.keys(BOUNDS).map((m) => {
-    const r = (rc[m] || 0) / recWeeks, p = (pc[m] || 0) / priWeeks;
-    return { muscle: m, recent: +r.toFixed(1), prior: +p.toFixed(1),
-             delta: +(r - p).toFixed(1),
+    const rn = rc[m] || 0, pn = pc[m] || 0;
+    const r = rn / recWeeks, p = pn / priWeeks;
+    return { muscle: m, recent: rn, prior: pn, delta: rn - pn,
+             recentPerWeek: +r.toFixed(1), priorPerWeek: +p.toFixed(1),
              dir: r - p > 0.5 ? "up" : r - p < -0.5 ? "down" : "flat" };
   }).filter((x) => x.recent > 0 || x.prior > 0)
     .sort((a, b) => a.delta - b.delta);
@@ -1210,6 +1246,25 @@ function analyse(workouts, health, rpeLog) {
   const perWeekNow = {};
   Object.entries(msets).forEach(([m, n]) => { perWeekNow[m] = n / weeks; });
 
+  // How many sets of one exercise this session contains on an average run.
+  const setsOfExPerSession = (title, exName) => {
+    const runs = workouts.filter((w) => (w.title || "").replace(/\s+/g, " ").trim() === title);
+    if (!runs.length) return 0;
+    const n = runs.reduce((a, w) => a + w.sets.filter((s) => s.exercise === exName).length, 0);
+    return Math.max(1, Math.round(n / runs.length));
+  };
+  // Frequency as a phrase, never a decimal. "0.3x per week" describes nothing
+  // a person recognises; "about once every 3 weeks" does.
+  const freqPhrase = (f) => {
+    if (f >= 2.5) return "3 or more times a week";
+    if (f >= 1.6) return "about twice a week";
+    if (f >= 0.8) return "about once a week";
+    if (f >= 0.55) return "about 3 weeks in 4";
+    if (f >= 0.4) return "about every other week";
+    const n = Math.round(1 / Math.max(f, 0.05));
+    return `about once every ${n} weeks`;
+  };
+
   const recommendations = templates.map((t) => {
     const freq = Math.max(0.25, tplFreq[t.title] || 0.5);
     // Muscles this day already touches.
@@ -1230,8 +1285,15 @@ function analyse(workouts, health, rpeLog) {
         const inDay = t.exercises.filter((n) => (exByMuscle[m] || {})[n]);
         const anywhere = Object.entries(exByMuscle[m] || {}).sort((a, b) => b[1] - a[1]);
         const pick = inDay[0] || (anywhere[0] ? anywhere[0][0] : null);
+        // Whole sets only. A user never performs 3.1 sets, so a recommendation
+        // phrased in tenths cannot be acted on. Integers throughout, and the
+        // TARGET is stated before the delta (Apple HIG: "choose a password with
+        // at least 8 characters" beats "that password is too short").
+        const nowHere = pick ? setsOfExPerSession(t.title, pick) : 0;
+        const [lo, hi] = BOUNDS[m] || [8, 20];
         return { muscle: m, exercise: pick, addSets: add,
-                 from: +now.toFixed(1), to: +after.toFixed(1),
+                 setsNow: nowHere, setsTarget: nowHere + add,
+                 from: Math.round(now), to: Math.round(after), lo, hi,
                  marginalNow: marginalOf(now), marginalAfter: marginalOf(after) };
       })
       .filter((c) => c.exercise)
@@ -1260,12 +1322,14 @@ function analyse(workouts, health, rpeLog) {
       const gain = cands.map((c) => {
         const here = perMuscleHere[c.muscle] || 0;
         const added = here * (1 - freq);              // extra weekly sets from this day alone
-        return { muscle: c.muscle, from: c.from, to: +(c.from + added).toFixed(1),
-                 setsHere: +here.toFixed(1) };
+        return { muscle: c.muscle, from: Math.round(c.from), to: Math.round(c.from + added),
+                 setsHere: Math.round(here) };
       });
-      frequency = { current: +freq.toFixed(1), target: 1, setsHere: Math.round(setsHere), gain };
+      frequency = { current: +freq.toFixed(1), currentPhrase: freqPhrase(freq),
+                    target: 1, setsHere: Math.round(setsHere), gain };
     }
-    return { title: t.title, freq: +freq.toFixed(1), lastDate: t.lastDate,
+    return { title: t.title, freq: +freq.toFixed(1), freqPhrase: freqPhrase(freq),
+             lastDate: t.lastDate,
              setsPerSession: Math.round(setsHere), frequency, additions: cands };
   }).filter((r) => r.additions.length || r.frequency);
 
@@ -1407,7 +1471,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.76f72a1";
+const BUILD="2026-08-18.e87da77";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1456,7 +1520,7 @@ const cfgFor=p=>Object.assign(defaultConfig(p.name,p.muscles,p.increment,p.typic
 const prescFor=p=>nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met})),cfgFor(p));
 
 /* ---------------------------------------------------------------- routing */
-let tab="today",detail=null,tplIdx=0,trendEx=null,showAllFind=false;
+let tab="today",detail=null,tplIdx=0,trendEx=null,showAllFind=false,openFind=-1;
 function go(t){tab=t;detail=null;lastResult=null;render();scrollTo(0,0);}
 let railScroll=0;
 function render(){
@@ -1802,9 +1866,9 @@ function viewInsights(){
   <div class="tiles">
     <div class="tile"><div class="lbl">Add sets here first</div>
       <div class="v" style="text-transform:capitalize">${esc(nice(top.muscle))}</div>
-      <div class="d">${top.perWeek}/wk · next set worth ${top.marginal}% of your first</div></div>
+      <div class="d">${top.sets} sets in ${Math.round(A.weeks)} weeks · aim for ${top.lo} to ${top.hi} a week</div></div>
     <div class="tile"><div class="lbl">Sessions</div><div class="v">${A.sessions}</div>
-      <div class="d">${(A.sessions/A.weeks).toFixed(1)}/wk across ${A.weeks} weeks</div></div>
+      <div class="d">about ${Math.round(A.sessions/A.weeks)} a week over ${Math.round(A.weeks)} weeks</div></div>
   </div>
   <div class="h2" style="margin-top:22px">What to change, day by day</div>
   <div class="sub" style="margin-bottom:12px">Your own sessions, with the highest-value change for each.
@@ -1815,19 +1879,19 @@ function viewInsights(){
       <div style="min-width:0"><div style="font-size:16px;font-weight:650;letter-spacing:-.01em">${esc(
         r.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
                .replace(/\s*Strength Session\s*$/i,"").trim())}</div>
-        <div class="tiny" style="margin-top:3px">${r.freq}× per week · ~${r.setsPerSession} sets a session</div></div>
+        <div class="tiny" style="margin-top:3px">You run this ${r.freqPhrase} · ${r.setsPerSession} sets a session</div></div>
     </div>
     ${r.frequency?`<div style="padding:13px 14px;border-radius:12px;margin-bottom:11px;
       background:color-mix(in srgb,var(--stop) 13%,transparent)">
-      <div style="font-weight:650;font-size:14.5px;margin-bottom:5px">Run this weekly — it is worth more than any set you could add</div>
-      <div class="sub">${r.frequency.gain.map(g=>`<b>${nice(g.muscle)}</b> ${g.from} → <b>${g.to}</b> sets/wk`).join(" · ")}.
-        You currently run it <b>${r.frequency.current}×</b> a week, so most of what this session does is
-        simply not happening.</div></div>`:""}
+      <div style="font-weight:650;font-size:14.5px;margin-bottom:5px">Run this every week</div>
+      <div class="sub">You run it <b>${r.frequency.currentPhrase}</b>. Doing it weekly is worth more than
+        any set you could add to it: ${r.frequency.gain.map(g=>`<b>${nice(g.muscle)}</b> would go from
+        <b>${g.from}</b> to <b>${g.to}</b> sets a week`).join(", ")}.</div></div>`:""}
     ${r.additions.map(a=>`<div style="padding:12px 0;border-top:1px solid var(--line)">
-      <div style="font-size:14.5px;font-weight:600">+${a.addSets} sets of ${esc(a.exercise)}</div>
-      <div class="sub" style="margin-top:4px"><span style="text-transform:capitalize">${nice(a.muscle)}</span>
-        ${a.from} → <b>${a.to}</b> sets/wk. Next set after that drops from
-        ${a.marginalNow}% to ${a.marginalAfter}% value.</div></div>`).join("")}
+      <div style="font-size:14.5px;font-weight:600">Do <b>${a.setsTarget} sets</b> of ${esc(a.exercise)}${
+        a.setsNow?` — you do ${a.setsNow} now`:""}</div>
+      <div class="sub" style="margin-top:4px">That takes <span style="text-transform:capitalize">${nice(a.muscle)}</span>
+        from about <b>${a.from}</b> to <b>${a.to}</b> sets a week. A good week is <b>${a.lo} to ${a.hi}</b>.</div></div>`).join("")}
   </div>`).join("")}
   ${(A.homeless||[]).length?`<div class="card" style="border-color:var(--hold)">
     <div class="h2" style="margin-bottom:6px">No session trains these</div>
@@ -1835,10 +1899,15 @@ function viewInsights(){
       days has to adopt them, or they need a day of their own.</div></div>`:""}
 
   <div class="h2" style="margin-top:24px">What the data says</div>
-  <div class="card">${shown.map(f=>
+  <div class="sub" style="margin-bottom:12px">Headline first. Tap any one to see the numbers behind it.</div>
+  <div class="card">${shown.map((f,i)=>
     `<div class="find" style="--c:var(${cmap[f.sev]||"--accent"})"><div class="dot"></div>
-     <div><h3>${f.t}</h3><p>${f.d}</p></div></div>`).join("")}
-    ${FIND.length>2?`<button class="btn quiet" style="margin:6px 0 0" onclick="showAllFind=${!showAllFind};render()">
+     <div style="min-width:0">
+       <h3 style="cursor:pointer" onclick="openFind=${openFind===i?-1:i};render()">${f.t}</h3>
+       ${openFind===i?`<p>${f.d}</p>`:`<button class="btn quiet" style="margin:6px 0 0;padding:5px 11px;font-size:13px"
+          onclick="openFind=${i};render()">Show the numbers</button>`}
+     </div></div>`).join("")}
+    ${FIND.length>2?`<button class="btn quiet" style="margin:6px 0 0" onclick="showAllFind=${!showAllFind};openFind=-1;render()">
       ${showAllFind?"Show less":`Show ${FIND.length-2} more`}</button>`:""}
   </div>
   ${(A.repQuality||[]).length?(()=>{
@@ -1846,60 +1915,56 @@ function viewInsights(){
     const vlab={easy:"Too light",unknown:"Can't tell",hard:"Near failure",noControl:"No control set"};
     const vcol={easy:"--stop",unknown:"--hold",hard:"--go",noControl:"--accent"};
     return `<div class="h2" style="margin-top:24px">Are your sets actually hard?</div>
-  <div class="sub" style="margin-bottom:12px"><b>How this works:</b> at the same weight, fatigue should
-   make your last set worse than your first. If it doesn't, you weren't near failure. This reads the
-   rep counts you already logged — it needs nothing new from you. Every lift you do is listed.</div>
+  <div class="sub" style="margin-bottom:12px">When a set is hard, the next one is worse. That's the test.</div>
   <div class="hero" style="margin-bottom:12px">
-    <div class="lbl">Sets where reps failed to fade</div>
+    <div class="lbl">Sets that weren't hard enough</div>
     <div class="big">${Math.round(100*(T.up+T.flat)/Math.max(1,N))}%</div>
-    <div class="cap">Across <b>${N}</b> same-weight blocks your reps went <b>up ${T.up}×</b>, stayed
-      <b>identical ${T.flat}×</b>, and declined only <b>${T.down}×</b>. Reps rising on a later set is
-      near-impossible if the first one was hard. Adding a little weight won't fix this — you'd still
-      stop on the same count.</div>
+    <div class="cap">You did 2 sets at the same weight <b>${N}</b> times. The second set got
+      <b>easier or stayed the same ${T.up+T.flat}</b> of those times. That only happens when you had
+      reps to spare.</div>
   </div>
-  <div class="card"><table><thead><tr><th>Lift</th><th>Sets at<br>top weight</th><th>Reps<br>across sets</th><th>Verdict</th></tr></thead><tbody>
-   ${A.repQuality.map(x=>`<tr><td>${esc(x.name.length>22?x.name.slice(0,21)+"…":x.name)}${
-     x.conf==="low"&&x.mean!=null?`<div class="tiny" style="opacity:.6">few repeats — provisional</div>`:""}</td>
-    <td style="color:var(${x.topPerSession<1.5?"--accent":"--ink-3"})">${x.topPerSession}</td>
-    <td style="color:var(${vcol[x.verdict]})">${x.mean==null?"—":(x.mean>0?"▲ +":x.mean<0?"▼ −":"– ")+(x.mean?Math.abs(x.mean):"")}</td>
-    <td style="color:var(${vcol[x.verdict]});font-weight:600">${vlab[x.verdict]}</td></tr>`).join("")}
-  </tbody></table>
-  <div class="tiny" style="margin-top:12px;line-height:1.55">
-   <b>Sets at top weight</b> is how many sets you average at your heaviest load for that lift. Below 1.5
-   means you ramp — you only ever do <em>one</em> real set, so there is nothing to compare it against.
-   <b>Reps across sets</b> is how many more reps your last set got than your first at that same weight.
-   Negative is what you want; a dash means the lift has no repeated load to measure.<br><br>
-   <b>“No control set”</b> is not a pass mark. Squat, RDL and anything else you ramp may be brutally hard
-   or comfortably easy — 9 reps at RPE 6 and 9 reps at RPE 10 look identical on paper, and no analysis of
-   rep counts can separate them. Do <b>2–3 sets at your working weight</b> and it becomes answerable.<br><br>
-   <b>What to do:</b> on anything red or amber, take the <em>last</em> set to 1–2 reps in reserve and log
-   what you actually got. One honest set per lift tells you how far off the weight is; guessing at +5 lb
-   does not.</div>
+  <div class="card">
+   ${A.repQuality.map(x=>`<div style="padding:13px 0;border-top:1px solid var(--line)">
+     <div class="row between" style="align-items:baseline;gap:10px">
+       <div style="font-size:14.5px;font-weight:600;min-width:0">${esc(x.name)}</div>
+       <div style="color:var(${vcol[x.verdict]});font-weight:700;font-size:14px;white-space:nowrap">${x.band}</div>
+     </div>
+     <div class="sub" style="margin-top:4px">${x.fadeLabel}</div>
+   </div>`).join("")}
+  <div class="tiny" style="margin-top:14px;line-height:1.55">
+   <b>Too easy</b> — you finish the last set with more reps than the first, so you had plenty left.<br>
+   <b>Can't tell</b> — your reps never move, so the log shows nothing either way.<br>
+   <b>Hard enough</b> — reps drop as you tire. This is the pattern you want everywhere.<br>
+   <b>Need a 2nd set</b> — you climb in weight and stop, so you do one set at your top weight and there is
+   nothing to compare it to. This is <em>not</em> a pass mark: 9 reps at an easy weight and 9 reps at a
+   brutal one look identical on paper. Two sets at the same weight makes it readable.<br><br>
+   <b>What to do:</b> on anything that isn't "Hard enough", take the <em>last</em> set until you have only
+   1 or 2 reps left in you, and write down what you actually got.</div>
   </div>
-  ${(A.rqRamped||[]).length>=2?(()=>{const R=A.rqRamped.slice(0,4);
+  ${(A.rqRamped||[]).filter(x=>x.example).length>=2?(()=>{
+   const R=A.rqRamped.filter(x=>x.example).slice(0,4);
    return `<div class="card" style="border-color:var(--hold);margin-top:10px">
-    <div class="h2" style="margin-bottom:6px">How much your ramp sets are costing you</div>
-    <div class="sub" style="margin-bottom:10px">Raise the load at the same effort and reps <em>must</em> fall —
-     about <b>3.5 reps</b> for every +10% weight, around the 8–9 rep mark. That is the benchmark. Here is
-     what your climbing sets actually cost:</div>
-    <table><thead><tr><th>Lift</th><th>Reps lost<br>per +10%</th><th>vs 3.5<br>expected</th></tr></thead><tbody>
-    ${R.map(x=>`<tr><td>${esc(x.name.length>22?x.name.slice(0,21)+"…":x.name)}</td>
-     <td>${x.slope}</td>
-     <td style="color:var(${x.rampWaste>=80?"--stop":x.rampWaste>=60?"--hold":"--ink-3"});font-weight:600">${x.rampWaste}% short</td></tr>`).join("")}
-    </tbody></table>
-    <div class="tiny" style="margin-top:12px;line-height:1.55">Climbing sets also accumulate fatigue, which
-     pushes this number <em>up</em> — so these are generous readings and the real gap is wider. Near zero
-     means the lighter sets carried no meaningful effort at all: they cost you the same time and the same
-     rest as a working set and bought you nothing.</div></div>`;})():""}`;})():""}
+    <div class="h2" style="margin-bottom:6px">Your build-up sets are too light</div>
+    <div class="sub" style="margin-bottom:12px">On these lifts you did the <b>same number of reps</b> at a
+     much lighter weight as at your heaviest — in the same session. If the light one had been hard, the
+     heavy one could not have matched it.</div>
+    ${R.map(x=>`<div style="padding:12px 0;border-top:1px solid var(--line)">
+     <div style="font-size:14.5px;font-weight:600">${esc(x.name)}</div>
+     <div class="sub" style="margin-top:4px">${x.example.reps} reps at <b>${fmt(x.example.lo)} lb</b>,
+      and ${x.example.reps} reps at <b>${fmt(x.example.hi)} lb</b> — ${fmt(x.example.spread)} lb heavier
+      for nothing.</div></div>`).join("")}
+    <div class="tiny" style="margin-top:14px;line-height:1.55">Those lighter sets cost you the same time
+     and the same rest as a real one. Start closer to your working weight and you get the sets back.</div>
+    </div>`;})():""}`;})():""}
 
   <div class="h2" style="margin-top:24px">Are you fixing it?</div>
-  <div class="sub" style="margin-bottom:12px">Weekly sets per muscle, last 4 weeks against the 4 before.
-   A snapshot tells you where you are; this tells you which way you are moving.</div>
-  <div class="card"><table><thead><tr><th>Muscle</th><th>Prior 4wk</th><th>Last 4wk</th><th>Change</th></tr></thead>
+  <div class="sub" style="margin-bottom:12px">Total sets in the last 4 weeks against the 4 weeks before.
+   A snapshot tells you where you are; this tells you which way you're moving.</div>
+  <div class="card"><table><thead><tr><th>Muscle</th><th>Sets in the<br>4 weeks before</th><th>Sets in the<br>last 4 weeks</th><th>Change</th></tr></thead>
    <tbody>${A.volumeTrend.map(v=>`<tr><td style="text-transform:capitalize">${esc(nice(v.muscle))}</td>
     <td>${v.prior}</td><td>${v.recent}</td>
-    <td style="color:var(${v.dir==="up"?"--go":v.dir==="down"?"--stop":"--ink-3"})">${
-      v.dir==="up"?"▲ +":v.dir==="down"?"▼ ":"– "}${v.dir==="flat"?"":Math.abs(v.delta)}</td></tr>`).join("")}
+    <td style="color:var(${v.delta>=2?"--go":v.delta<=-2?"--stop":"--ink-3"})">${
+      v.delta===0?"same":(v.delta>0?"▲ +":"▼ −")+Math.abs(v.delta)}</td></tr>`).join("")}
    </tbody></table></div>
 
   <div class="h2" style="margin-top:24px">Personal bests</div>
@@ -1923,15 +1988,19 @@ function viewInsights(){
    its current volume. <b>The higher the dot, the more you gain by adding a set there.</b></div>
   <div class="card"><div id="dose"></div>
     <div class="sub" id="dosecap" style="margin-top:12px"></div></div>
-  <div class="card"><table><thead><tr><th>Muscle</th><th>Sets/wk</th><th>Days/wk</th><th>Next set</th></tr></thead>
+  <div class="card"><table><thead><tr><th>Muscle</th><th>Total<br>sets</th><th>Weeks you<br>trained it</th><th>A good<br>week</th></tr></thead>
    <tbody>${A.volume.filter(v=>v.sets>0).map(v=>`<tr><td style="text-transform:capitalize">${esc(nice(v.muscle))}</td>
-    <td>${v.perWeek}</td><td>${v.freqPerWeek}</td>
-    <td style="color:var(${v.marginal>=50?"--go":v.marginal>=35?"--hold":"--ink-3"})">${v.marginal}%</td></tr>`).join("")}
+    <td>${v.sets}</td>
+    <td style="color:var(${v.weeksTrained<v.totalWeeks*0.6?"--stop":"--ink-3"})">${v.weeksTrained} of ${v.totalWeeks}</td>
+    <td>${v.lo} to ${v.hi}</td></tr>`).join("")}
    </tbody></table>
-   <div class="tiny" style="margin-top:12px;line-height:1.5">Fitted to the <b>shape</b> that
-    meta-regression reports, not its coefficients — it ranks where to add volume, it does not predict
-    how much you will gain. Frequency helps <b>strength</b>; its hypertrophy effect is negligible at
-    matched volume.</div></div>`;
+   <div class="tiny" style="margin-top:12px;line-height:1.55"><b>Total sets</b> is across all
+    ${Math.round(A.weeks)} weeks. <b>Weeks you trained it</b> is how many of those weeks the muscle got any work at
+    all — red means fewer than 6 weeks in 10, which is the number that actually matters. A muscle you
+    train hard every third week spends most of the block losing what it gained.<br><br>
+    One set counts toward every muscle it works, so an RDL adds to hamstrings, glutes and lower back at
+    once. The "good week" range is fitted to the <b>shape</b> the research reports, not its exact
+    numbers — it ranks where to add sets, it doesn't predict how much you'll grow.</div></div>`;
 }
 function drawDose(){
   const host=$("dose");if(!host||!A.volume)return;
@@ -1973,10 +2042,10 @@ function drawDose(){
 
   const best=sorted[0],worst=sorted[sorted.length-1];
   const cap=$("dosecap");
-  if(cap)cap.innerHTML=`Right now an extra <b>${nice(best.muscle)}</b> set (you do ${best.perWeek}/wk) is
-    worth about <b>${Math.round(best.marginal/worst.marginal*10)/10}×</b> as much as an extra
-    <b>${nice(worst.muscle)}</b> set (${worst.perWeek}/wk). Same set, same hour in the gym, very
-    different return. That is the whole point of the curve.`;
+  if(cap)cap.innerHTML=`One more <b>${nice(best.muscle)}</b> set is worth about
+    <b>${Math.round(best.marginal/worst.marginal*10)/10}×</b> one more <b>${nice(worst.muscle)}</b> set —
+    you've done ${best.sets} ${nice(best.muscle)} sets and ${worst.sets} ${nice(worst.muscle)} sets.
+    Same set, same hour in the gym, very different return.`;
 }
 
 /* ================================================================= TRENDS */
