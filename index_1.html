@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="theme-color" content="#0d0d0d">
+<title>Ledger</title>
+<style>
+:root{color-scheme:dark;
+ --surface-1:#1a1a19;--page:#0d0d0d;--text-primary:#fff;--text-secondary:#c3c2b7;
+ --muted:#898781;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);
+ --series-1:#3987e5;--series-2:#d95926;
+ --z1:#86b6ef;--z2:#5598e7;--z3:#3987e5;--z4:#256abf;--z5:#184f95;
+ --good:#0ca30c;--warning:#fab219;--critical:#d03b3b;--radius:14px}
+@media(prefers-color-scheme:light){:root{color-scheme:light;
+ --surface-1:#fcfcfb;--page:#f9f9f7;--text-primary:#0b0b0b;--text-secondary:#52514e;
+ --grid:#e1e0d9;--axis:#c3c2b7;--border:rgba(11,11,11,.10);
+ --series-1:#2a78d6;--series-2:#eb6834}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--page);color:var(--text-primary);
+ font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+ padding-bottom:calc(76px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased}
+h1{font-size:24px;margin:0;letter-spacing:-.02em}
+h2{font-size:17px;margin:0 0 8px}
+h3{font-size:15px;margin:0 0 4px}
+p{margin:0 0 10px}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.wrap{max-width:680px;margin:0 auto;padding:18px 16px 0}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
+header .sub{color:var(--muted);font-size:13px}
+.card{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);padding:15px;margin-bottom:12px}
+.muted{color:var(--muted)}.secondary{color:var(--text-secondary)}
+.small{font-size:13px}.tiny{font-size:12px}
+.cap{font-size:12.5px;color:var(--muted);margin:0 0 11px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.tile{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);padding:13px}
+.tile .l{font-size:12px;color:var(--muted);margin-bottom:4px}
+.tile .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.tile .d{font-size:12px;color:var(--text-secondary);margin-top:3px}
+.btn{display:block;width:100%;padding:15px;border-radius:12px;background:var(--series-1);
+ color:#fff;font-weight:600;text-align:center;margin-bottom:9px}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text-primary);font-weight:500}
+.btn.danger{background:transparent;border:1px solid var(--critical);color:var(--critical);font-weight:500}
+.btn:active{opacity:.72}
+.ex{display:flex;align-items:center;justify-content:space-between;gap:12px;
+ padding:13px 0;border-bottom:1px solid var(--border);width:100%;text-align:left}
+.ex:last-child{border-bottom:none}
+.ex>span:first-child{min-width:0;flex:1}
+.ex .name{display:block;font-weight:500;line-height:1.25}
+.ex .presc{display:block;font-size:13px;color:var(--muted);margin-top:3px}
+.badge{font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;
+ border:1px solid var(--border);color:var(--text-secondary);white-space:nowrap}
+.badge.up{color:var(--good);border-color:var(--good)}
+.badge.down{color:var(--critical);border-color:var(--critical)}
+.badge.hold{color:var(--warning);border-color:var(--warning)}
+.finding{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border)}
+.finding:last-child{border-bottom:none}
+.rank{flex:0 0 26px;height:26px;border-radius:8px;display:flex;align-items:center;
+ justify-content:center;font-weight:700;font-size:13px;color:#fff}
+.crit{background:var(--critical)}.warn{background:var(--warning);color:#241b00}
+.info{background:var(--series-1)}.good{background:var(--good)}
+.finding p{font-size:13.5px;color:var(--text-secondary);margin:0}
+.finding b{color:var(--text-primary)}
+svg{display:block;width:100%;height:auto;overflow:visible}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:8px 4px;border-bottom:1px solid var(--border)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.pill{font-size:11px;font-weight:600;padding:3px 7px;border-radius:5px;white-space:nowrap}
+.p-prog{color:var(--good);border:1px solid var(--good)}
+.p-flat{color:var(--warning);border:1px solid var(--warning)}
+.p-reg{color:var(--critical);border:1px solid var(--critical)}
+.p-noise{color:var(--muted);border:1px solid var(--border)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);margin:2px 0 10px}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;
+ background:color-mix(in srgb,var(--page) 92%,transparent);backdrop-filter:blur(12px);
+ border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--muted);
+ display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button[aria-current=page]{color:var(--series-1);font-weight:600}
+nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
+ stroke-linecap:round;stroke-linejoin:round}
+.empty{text-align:center;color:var(--muted);padding:40px 18px;font-size:14px}
+.drop{border:1.5px dashed var(--border);border-radius:12px;padding:22px 16px;text-align:center;
+ color:var(--muted);font-size:14px;margin-bottom:10px}
+.ok{color:var(--good)}.bad{color:var(--critical)}
+.status{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.status:last-child{border-bottom:none}
+details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:7px 0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chip{padding:8px 13px;border-radius:999px;border:1px solid var(--border);
+ background:transparent;color:var(--text-secondary);font-size:14px;line-height:1}
+.chip[aria-pressed=true]{background:var(--series-1);border-color:var(--series-1);color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<nav>
+ <button data-tab="today" onclick="go('today')"><svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11"/></svg>Today</button>
+ <button data-tab="insights" onclick="go('insights')"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9M12 7v5l3 2"/></svg>Insights</button>
+ <button data-tab="trends" onclick="go('trends')"><svg viewBox="0 0 24 24"><path d="M3 20h18M6 16l4-5 3 3 5-7"/></svg>Trends</button>
+ <button data-tab="data" onclick="go('data')"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>Data</button>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* ===== CORE (inlined) ===== */
+/* ============================================================================
+   CORE — parsing, progression, analysis.
+   Kept separate from the UI so it can be unit-tested in node, which is how the
+   progression engine was validated (21/21 against a Python reference).
+============================================================================ */
+"use strict";
+
+/* ---------------------------------------------------------------- constants */
+
+// Motra lists these PER LIMB and doubles them for volume. Established by
+// reconciling against Motra's own reported TVL — it resolved exactly on all 15
+// sessions where naive arithmetic disagreed. Getting this wrong understates
+// dumbbell volume by ~10% on any session containing them.
+const PER_LIMB = new Set([
+  "Cable Fly Low", "Dumbbell Single-Arm Lateral Raise", "Dumbbell Incline Bench Press",
+  "Machine Single-Leg Leg Extension", "Dumbbell Incline Bicep Curl",
+  "Dumbbell Bicep Curl", "Dumbbell Incline Hammer Curl",
+]);
+
+// Weekly hard-set bounds per muscle: roughly (minimum effective, maximum
+// recoverable). Population averages, editable in Settings — a starting guess
+// about you, not a law of physiology.
+const BOUNDS = {
+  chest: [10, 22], lats: [10, 22], traps: [6, 20], shoulders: [8, 22],
+  biceps: [8, 20], triceps: [8, 20], quads: [8, 20], hamstrings: [8, 16],
+  glutes: [6, 16], abs: [6, 20], lowerBack: [4, 12], forearms: [4, 14],
+};
+
+const UPPER = ["chest", "lats", "traps", "shoulders", "biceps", "triceps", "forearms"];
+const LOWER = ["quads", "hamstrings", "glutes"];
+
+/* ---------------------------------------------------------------- 1RM maths */
+
+const epley = (w, r) => w * (1 + r / 30);
+// Denominator collapses at 37 reps; never called above the rep cap below.
+const brzycki = (w, r) => (w * 36) / (37 - r);
+
+function e1rm(w, r) {
+  if (!(r > 0)) return { value: 0, conf: "invalid" };
+  if (r === 1) return { value: w, conf: "exact" };
+  // Both formulas are fitted to low-rep sets. Past ~12 they diverge badly and
+  // the number becomes a vibe, so it gets labelled rather than quietly reported.
+  if (r <= 12) return { value: 0.5 * (epley(w, r) + brzycki(w, r)), conf: "normal" };
+  return { value: epley(w, r), conf: "low" };
+}
+
+const roundTo = (w, inc) => (inc > 0 ? Math.round(w / inc) * inc : w);
+const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+/* ---------------------------------------------------------------- Motra parse */
+
+/**
+ * Motra's export is a block-per-workout report, not a table: a title row, then
+ * labelled fields, a heart-rate zone sub-table, then a set list under an
+ * "All Sets" header. So it needs a state machine, not a CSV reader.
+ * Accepts array-of-arrays so CSV and XLSX paths converge.
+ */
+function parseMotra(rows) {
+  const S = (v) => (v === null || v === undefined ? "" : String(v).trim());
+  const F = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  const dur = (t) => {
+    const m = /^(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$/.exec(S(t));
+    if (!m) return 0;
+    return (+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0));
+  };
+
+  const out = [];
+  let cur = null, inSets = false, pendingTitle = null, zoneHeaderAt = -10;
+
+  rows.forEach((raw, i) => {
+    const c = (raw || []).map(S);
+    const c0 = c[0] || "";
+    if (!c.some(Boolean)) { inSets = false; return; }
+
+    if (c0 === "Workout Start") {
+      cur = { title: pendingTitle || "(untitled)", start: null, end: null,
+              durationS: 0, totalSets: 0, calories: 0, tvl: 0,
+              zones: [0, 0, 0, 0, 0], sets: [] };
+      out.push(cur);
+      const d = new Date(S(raw[1]).replace(" ", "T"));
+      cur.start = isNaN(d) ? null : d;
+      inSets = false;
+      return;
+    }
+    if (!cur) { if (c0 && !c[1]) pendingTitle = c0; return; }
+
+    if (c0 === "Workout End") {
+      const d = new Date(S(raw[1]).replace(" ", "T"));
+      if (!isNaN(d)) cur.end = d;
+    } else if (c0 === "Total Duration (seconds)") cur.durationS = F(raw[1]);
+    else if (c0 === "Total Sets") cur.totalSets = F(raw[1]);
+    else if (c0 === "Burned Calories") cur.calories = F(raw[1]);
+    else if (c0 === "Total TVL (lbs)") cur.tvl = F(raw[1]);
+    else if (c0 === "Zone 1" && c[1] === "Zone 2") zoneHeaderAt = i;
+    else if (i === zoneHeaderAt + 1) cur.zones = [0, 1, 2, 3, 4].map((k) => dur(c[k]));
+    else if (c0 === "Exercise" && (c[1] || "").startsWith("Weight")) inSets = true;
+    else if (inSets && c0) {
+      cur.sets.push({
+        exercise: c0, weight: F(raw[1]), reps: Math.round(F(raw[2])),
+        seconds: F(raw[3]), rest: F(raw[5]),
+        muscles: (c[7] || "").split(",").map((m) => m.trim()).filter(Boolean),
+      });
+    } else if (c0 && !c[1] && !["Effort", "Heart Rate Zones", "All Sets"].includes(c0)) {
+      pendingTitle = c0; inSets = false;
+    }
+  });
+
+  return out.filter((w) => w.sets.length > 0).sort((a, b) => a.start - b.start);
+}
+
+/* ---------------------------------------------------------------- Health parse */
+
+/**
+ * Health Auto Export JSON. Its shape has shifted across versions, so this
+ * probes several known layouts rather than assuming one and silently importing
+ * nothing — a silent no-op is the worst failure mode for an importer.
+ */
+function parseHealthJSON(json) {
+  const out = { metrics: {}, workouts: [] };
+  const root = json.data || json;
+
+  const pushMetric = (name, recs) => {
+    if (!Array.isArray(recs)) return;
+    const rows = recs.map((r) => {
+      const t = r.date || r.startDate || r.timestamp;
+      const v = r.qty !== undefined ? r.qty : (r.value !== undefined ? r.value : r.Avg);
+      return t && v !== undefined && v !== null ? { t: String(t).slice(0, 10), v: +v } : null;
+    }).filter(Boolean).filter((r) => Number.isFinite(r.v));
+    if (rows.length) out.metrics[name] = (out.metrics[name] || []).concat(rows);
+  };
+
+  if (Array.isArray(root.metrics)) {
+    root.metrics.forEach((m) => pushMetric(m.name, m.data));
+  } else if (root.metrics && typeof root.metrics === "object") {
+    Object.entries(root.metrics).forEach(([k, v]) => pushMetric(k, v));
+  }
+  if (Array.isArray(root.workouts)) {
+    out.workouts = root.workouts.map((w) => ({
+      name: w.name || w.workoutActivityType || "",
+      start: (w.start || w.startDate || "").slice(0, 10),
+      durationMin: (+w.duration || 0) / (w.duration > 1000 ? 60 : 1),
+      kcal: +((w.activeEnergyBurned && w.activeEnergyBurned.qty) || w.activeEnergy || 0),
+    })).filter((w) => w.start);
+  }
+  Object.values(out.metrics).forEach((rows) => rows.sort((a, b) => (a.t < b.t ? -1 : 1)));
+  return out;
+}
+
+// Health Auto Export names vary by version; match loosely so a rename does not
+// silently drop a whole metric.
+const METRIC_ALIASES = {
+  weight: ["weight_body_mass", "body_mass", "weight"],
+  leanMass: ["lean_body_mass", "leanbodymass"],
+  bodyFat: ["body_fat_percentage", "bodyfatpercentage"],
+  restingHR: ["resting_heart_rate", "restingheartrate"],
+  hrv: ["heart_rate_variability", "heartratevariability"],
+  sleep: ["sleep_analysis", "sleepanalysis"],
+};
+
+// Metric names that must never be matched loosely, because a shorter alias is a
+// substring of them. `body_mass` is contained in `body_mass_index`, so a naive
+// includes() match silently returns BMI when asked for weight — and BMI numbers
+// look plausible enough as kilograms that it would never be noticed.
+const NEVER_LOOSE = ["body_mass_index", "bodymassindex"];
+
+function findMetric(metrics, key) {
+  const want = (METRIC_ALIASES[key] || [key]).map((w) => w.replace(/[^a-z]/g, "_"));
+  const norm = (s) => s.toLowerCase().replace(/[^a-z]/g, "_");
+  const names = Object.keys(metrics);
+
+  // Exact match wins outright.
+  for (const name of names) {
+    if (want.includes(norm(name))) return metrics[name];
+  }
+  // Then substring — but skip names that are known superstrings of an alias,
+  // unless this key is explicitly asking for one of them.
+  for (const name of names) {
+    const n = norm(name);
+    if (NEVER_LOOSE.includes(n) && !want.includes(n)) continue;
+    if (want.some((w) => n.includes(w))) return metrics[name];
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------- progression */
+
+function defaultConfig(exercise, muscles) {
+  const m = (muscles && muscles[0]) || "";
+  const c = { repMin: 8, repMax: 12, sets: 3, increment: 5, rpeCap: 9, easyRPE: 7,
+              stallLimit: 3, deloadFactor: 0.9 };
+  if (["chest", "lats", "quads", "hamstrings", "glutes", "lowerBack"].includes(m)) {
+    c.repMin = 6; c.repMax = 10; c.increment = 5;
+  } else if (["biceps", "triceps", "shoulders", "forearms"].includes(m)) {
+    c.repMin = 10; c.repMax = 15; c.increment = 2.5;
+  } else if (m === "abs") { c.repMin = 12; c.repMax = 20; c.increment = 5; }
+  return c;
+}
+
+/**
+ * CONTROL input is "did you meet the prescription" — a binary per session.
+ * REPORTING metric is e1RM. Keeping them separate is load-bearing: right after
+ * a weight increase your reps necessarily drop, e1RM dips, and a naive
+ * controller reads that dip as a stall — deloading you exactly when you were
+ * progressing. So e1RM is charted, never obeyed.
+ */
+function nextPrescription(history, cfg) {
+  const cold = (reason) => ({ decision: "needsCalibration", weight: null,
+                              targetReps: cfg.repMin, sets: cfg.sets, reason });
+  if (!history.length) {
+    return cold(`No history yet. Pick a weight you could manage for about ${cfg.repMin + 2} reps and log a session.`);
+  }
+  const sessions = history.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+  const last = sessions[sessions.length - 1];
+  const working = last.sets.filter((s) => s.reps > 0);
+  if (!working.length) return cold("Last session had no completed sets.");
+
+  const top = Math.max(...working.map((s) => s.weight));
+  const atTop = working.filter((s) => s.weight >= top - 1e-6);
+  const rpes = last.sets.map((s) => s.rpe).filter((v) => v != null);
+  const avgRPE = rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null;
+
+  let stalls = 0;
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (sessions[i].met === false) stalls++; else break;
+  }
+  if (stalls >= cfg.stallLimit) {
+    let w = roundTo(top * cfg.deloadFactor, cfg.increment);
+    // On light movements 10% can round back to the same number. A deload that
+    // does not reduce load is not a deload.
+    if (w >= top) w = Math.max(cfg.increment, top - cfg.increment);
+    return { decision: "deload", weight: w, targetReps: cfg.repMin, sets: cfg.sets,
+      reason: `Missed the target ${stalls} sessions running at ${fmt(top)} lb. Backing off to ${fmt(w)} to rebuild.` };
+  }
+
+  // The ascending-ramp trap. If you ramp 8×70, 8×90, 8×110 you performed ONE
+  // set at your top load. Double progression cannot fire — it needs `sets` sets
+  // at a shared load to know the load is repeatable — so a naive engine would
+  // prescribe "+1 rep" forever and never once add weight. Rather than silently
+  // stalling, say the thing that actually unblocks progress: repeat the load.
+  if (atTop.length < cfg.sets && working.length >= 2) {
+    const topReps = Math.min(...atTop.map((s) => s.reps));
+    return { decision: "consolidate", weight: top, targetReps: topReps, sets: cfg.sets,
+      reason: `You did ${atTop.length} set${atTop.length > 1 ? "s" : ""} at ${fmt(top)} lb and the rest lighter, so there is no way to tell whether ${fmt(top)} was repeatable or a one-off — and no rule can add load on that evidence. Do ${cfg.sets} sets at ${fmt(top)} lb for ${topReps} reps. Once you hold it across all ${cfg.sets}, weight increases resume automatically.` };
+  }
+
+  const pres = atTop.slice(0, cfg.sets);
+  const allMax = pres.length >= cfg.sets && pres.every((s) => s.reps >= cfg.repMax);
+  if (allMax) {
+    if (avgRPE != null && avgRPE >= cfg.rpeCap) {
+      return { decision: "hold", weight: top, targetReps: cfg.repMax, sets: cfg.sets,
+        reason: `Hit ${cfg.repMax} reps on every set but at RPE ${fmt(avgRPE)}. Repeating to consolidate before adding load.` };
+    }
+    let step = cfg.increment, decision = "increase";
+    let reason = `Topped the rep range (${cfg.repMax}×${cfg.sets}) at ${fmt(top)} lb. Adding ${fmt(step)}.`;
+    if (avgRPE != null && avgRPE <= cfg.easyRPE) {
+      step = cfg.increment * 2; decision = "doubleIncrease";
+      reason = `Topped the range at RPE ${fmt(avgRPE)} — well short of failure. Double jump to ${fmt(top + step)} lb.`;
+    }
+    return { decision, weight: roundTo(top + step, cfg.increment),
+             targetReps: cfg.repMin, sets: cfg.sets, reason };
+  }
+
+  const weakest = pres.length ? Math.min(...pres.map((s) => s.reps)) : cfg.repMin;
+  const target = Math.min(weakest + 1, cfg.repMax);
+  return { decision: "addReps", weight: top, targetReps: target, sets: cfg.sets,
+    reason: `Holding ${fmt(top)} lb and chasing ${target} reps on every set (weakest last time was ${weakest}).` };
+}
+
+function judge(session, presc, cfg) {
+  // The cold-start prescription carries targetReps but NO weight, so both must
+  // be checked. Guarding on targetReps alone crashes on the first session
+  // anyone logs — found by a test, not by reading.
+  if (!presc || presc.targetReps == null || presc.weight == null) {
+    const w = session.sets.filter((s) => s.reps > 0);
+    return w.length >= cfg.sets && w.every((s) => s.reps >= cfg.repMax);
+  }
+  const w = session.sets.filter((s) => s.weight >= presc.weight - 1e-6);
+  if (w.length < presc.sets) return false;
+  return w.slice(0, presc.sets).every((s) => s.reps >= presc.targetReps);
+}
+
+/* ---------------------------------------------------------------- analysis */
+
+function linreg(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return { slope: 0, r2: 0, n };
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  const slope = sxx ? sxy / sxx : 0;
+  const r2 = sxx && syy ? (sxy * sxy) / (sxx * syy) : 0;
+  return { slope, r2, n };
+}
+
+function analyse(workouts, health) {
+  const days = (workouts[workouts.length - 1].start - workouts[0].start) / 864e5 + 1;
+  const weeks = days / 7;
+  const vol = (s) => s.weight * s.reps * (PER_LIMB.has(s.exercise) ? 2 : 1);
+
+  // Volume per muscle. A set counts toward every muscle Motra tags — a
+  // GENEROUS convention, so real figures are lower than shown, not higher.
+  const msets = {};
+  workouts.forEach((w) => w.sets.forEach((s) =>
+    s.muscles.forEach((m) => { msets[m] = (msets[m] || 0) + 1; })));
+
+  const volume = Object.keys(BOUNDS).map((m) => {
+    const n = msets[m] || 0, per = n / weeks, [lo, hi] = BOUNDS[m];
+    return { muscle: m, sets: n, perWeek: +per.toFixed(1), lo, hi,
+             status: n === 0 ? "zero" : per < lo ? "under" : per > hi ? "over" : "ok" };
+  }).sort((a, b) => b.perWeek - a.perWeek);
+
+  const sum = (list) => list.reduce((a, m) => a + (msets[m] || 0), 0);
+  const balance = { upper: sum(UPPER), lower: sum(LOWER),
+                    push: sum(["chest", "shoulders", "triceps"]),
+                    pull: sum(["lats", "traps", "biceps"]) };
+
+  // Per-exercise history + progression trend.
+  const byEx = {};
+  workouts.forEach((w) => {
+    const best = {};
+    w.sets.forEach((s) => {
+      const e = e1rm(s.weight, s.reps).value;
+      if (!best[s.exercise] || e > best[s.exercise].e) best[s.exercise] = { e, s };
+    });
+    Object.entries(best).forEach(([name, { e, s }]) => {
+      (byEx[name] = byEx[name] || []).push({
+        date: w.start.toISOString().slice(0, 10), e1rm: e, weight: s.weight,
+        reps: s.reps, muscles: s.muscles,
+        sets: w.sets.filter((x) => x.exercise === name)
+                    .map((x) => ({ weight: x.weight, reps: x.reps, rpe: null })),
+      });
+    });
+  });
+
+  const progress = Object.entries(byEx).map(([name, pts]) => {
+    pts.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const t0 = new Date(pts[0].date);
+    const { slope, r2 } = linreg(pts.map((p) => (new Date(p.date) - t0) / 6048e5),
+                                 pts.map((p) => p.e1rm));
+    let verdict = "noisy";
+    if (pts.length >= 4) {
+      if (slope > 0.5 && r2 > 0.4) verdict = "progressing";
+      else if (slope < -0.5 && r2 > 0.4) verdict = "regressing";
+      else if (Math.abs(slope) <= 0.5) verdict = "stalled";
+    } else verdict = "tooFew";
+    return { name, n: pts.length, slope: +slope.toFixed(2), r2: +r2.toFixed(2),
+             verdict, first: +pts[0].e1rm.toFixed(1),
+             last: +pts[pts.length - 1].e1rm.toFixed(1),
+             muscles: pts[pts.length - 1].muscles, pts };
+  }).sort((a, b) => a.slope - b.slope);
+
+  // Rest vs time under tension.
+  const rests = workouts.flatMap((w) => w.sets.map((s) => s.rest)).filter((r) => r > 0);
+  const tuts = workouts.flatMap((w) => w.sets.map((s) => s.seconds)).filter((r) => r > 0);
+  const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+  const restMed = med(rests), tutMed = med(tuts);
+
+  const restByEx = Object.keys(byEx).map((name) => {
+    const ss = workouts.flatMap((w) => w.sets.filter((s) => s.exercise === name));
+    return { name, n: ss.length,
+             rest: med(ss.map((s) => s.rest).filter((r) => r > 0)),
+             tut: med(ss.map((s) => s.seconds).filter((r) => r > 0)) };
+  }).filter((r) => r.n >= 6 && r.rest && r.tut).sort((a, b) => b.rest - a.rest);
+
+  // Weekly series.
+  const weekly = {};
+  workouts.forEach((w) => {
+    const d = new Date(w.start);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const k = d.toISOString().slice(0, 10);
+    weekly[k] = weekly[k] || { week: k, n: 0, sets: 0, vol: 0 };
+    weekly[k].n++; weekly[k].sets += w.sets.length;
+    weekly[k].vol += w.sets.reduce((a, s) => a + vol(s), 0);
+  });
+
+  // Data-quality flags: rep jumps ≥50% at same-or-higher load. Fatigue makes
+  // that very unlikely mid-run, so they read as auto-count errors.
+  const flags = [];
+  workouts.forEach((w) => {
+    const per = {};
+    w.sets.forEach((s) => (per[s.exercise] = per[s.exercise] || []).push(s));
+    Object.entries(per).forEach(([name, ss]) => {
+      for (let i = 1; i < ss.length; i++) {
+        const a = ss[i - 1], b = ss[i];
+        if (b.weight >= a.weight && a.reps > 0 && (b.reps - a.reps) / a.reps >= 0.5) {
+          flags.push({ date: w.start.toISOString().slice(0, 10), name,
+                       prev: `${a.reps}×${a.weight}`, now: `${b.reps}×${b.weight}`,
+                       jump: Math.round(((b.reps - a.reps) / a.reps) * 100) });
+        }
+      }
+    });
+  });
+
+  // Body composition — only when Health data is loaded.
+  let comp = null;
+  if (health && health.metrics) {
+    // Only look at the last 180 days. Sparse historic readings — four weigh-ins
+    // spread across six years, say — would otherwise land in the "first 5"
+    // average and make a six-year gap look like a recent trend.
+    const WINDOW_DAYS = 180;
+    const grab = (k) => {
+      let rows = findMetric(health.metrics, k);
+      if (!rows || rows.length < 5) return null;
+      const newest = new Date(rows[rows.length - 1].t);
+      const cutoff = new Date(newest.getTime() - WINDOW_DAYS * 864e5);
+      const recent = rows.filter((r) => new Date(r.t) >= cutoff);
+      if (recent.length >= 8) rows = recent;
+      const t0 = new Date(rows[0].t);
+      const { slope, r2, n } = linreg(rows.map((r) => (new Date(r.t) - t0) / (30.44 * 864e5)),
+                                      rows.map((r) => r.v));
+      const first5 = rows.slice(0, 5).reduce((a, r) => a + r.v, 0) / 5;
+      const last5 = rows.slice(-5).reduce((a, r) => a + r.v, 0) / 5;
+      // Endpoint means matter more than the fitted slope: a hump mid-window can
+      // produce a significant-looking slope with almost no net change. Report both.
+      return { rows, slope: +slope.toFixed(3), r2: +r2.toFixed(2), n,
+               first5: +first5.toFixed(2), last5: +last5.toFixed(2),
+               net: +(last5 - first5).toFixed(2) };
+    };
+    comp = { weight: grab("weight"), leanMass: grab("leanMass"), bodyFat: grab("bodyFat"),
+             restingHR: grab("restingHR"), hrv: grab("hrv") };
+  }
+
+  return { days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
+           totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
+           totalVolume: Math.round(workouts.reduce((a, w) =>
+             a + w.sets.reduce((b, s) => b + vol(s), 0), 0)),
+           volume, balance, progress, byEx, restMed, tutMed,
+           ratio: tutMed ? +(restMed / tutMed).toFixed(1) : 0,
+           over3: rests.length ? Math.round(rests.filter((r) => r > 180).length / rests.length * 100) : 0,
+           restByEx, weekly: Object.values(weekly).sort((a, b) => (a.week < b.week ? -1 : 1)),
+           flags, comp,
+           start: workouts[0].start.toISOString().slice(0, 10),
+           end: workouts[workouts.length - 1].start.toISOString().slice(0, 10) };
+}
+
+/* ---------------------------------------------------------------- findings */
+
+/**
+ * Findings are DERIVED, never hardcoded — so they stay true as new data lands.
+ * Each carries the numbers it rests on, so nothing has to be taken on trust.
+ */
+function buildFindings(A) {
+  const F = [];
+  const v = Object.fromEntries(A.volume.map((x) => [x.muscle, x]));
+  const under = A.volume.filter((x) => x.status === "under" || x.status === "zero");
+
+  if (A.ratio >= 3) {
+    F.push({ sev: "crit", t: `You rest ${A.ratio}× longer than you lift.`,
+      d: `Median rest is <b>${A.restMed}s</b> against a <b>${A.tutMed}s</b> set, and <b>${A.over3}%</b> of sets rest over three minutes. If your heart rate is already back near baseline before the next set, that time is not recovery — it is just elapsed. Cutting isolation rest to 60–90s is the cheapest volume available to you.` });
+  }
+  if (under.length >= 6) {
+    const worst = under.slice().sort((a, b) => (a.perWeek - a.lo) - (b.perWeek - b.lo)).slice(0, 3);
+    F.push({ sev: "crit", t: `${under.length} of ${A.volume.length} muscle groups are below minimum volume.`,
+      d: `Worst: ${worst.map((x) => `<b>${x.muscle}</b> at ${x.perWeek}/wk against ${x.lo}`).join(", ")}. This counting is <em>generous</em> — a set counts toward every muscle Motra tags it with — so reality is worse, not better.` });
+  }
+  const ratio = A.balance.lower ? A.balance.upper / A.balance.lower : 99;
+  if (ratio > 2) {
+    F.push({ sev: "crit", t: `Upper body outweighs lower by ${ratio.toFixed(1)}:1.`,
+      d: `<b>${A.balance.upper}</b> upper sets against <b>${A.balance.lower}</b> lower. Push and pull sit at ${A.balance.push}:${A.balance.pull}, so you can balance a programme when you attend to it — legs are simply not being attended to.` });
+  }
+  const reg = A.progress.filter((p) => p.verdict === "regressing");
+  const stall = A.progress.filter((p) => p.verdict === "stalled");
+  const prog = A.progress.filter((p) => p.verdict === "progressing");
+  if (reg.length) {
+    F.push({ sev: "warn", t: `${reg.length} lift${reg.length > 1 ? "s are" : " is"} genuinely regressing.`,
+      d: reg.map((p) => `<b>${p.name}</b> at ${p.slope} lb/wk (R² ${p.r2}, ${p.n} sessions)`).join("; ") +
+         `. A negative slope with R² above 0.4 is a real decline, not noise.` });
+  }
+  if (stall.length) {
+    F.push({ sev: "warn", t: `${stall.length} lift${stall.length > 1 ? "s have" : " has"} gone nowhere.`,
+      d: stall.map((p) => `<b>${p.name}</b> (${p.n} sessions, slope ${p.slope}, R² ${p.r2})`).join("; ") +
+         `. Flat across that many sessions is not bad luck — change one variable: the load, the rep target, or the fatigue arriving before it.` });
+  }
+  if (prog.length) {
+    F.push({ sev: "good", t: `${prog.length} lift${prog.length > 1 ? "s are" : " is"} genuinely progressing.`,
+      d: prog.map((p) => `<b>${p.name}</b> +${p.slope} lb/wk (R² ${p.r2})`).join("; ") +
+         `. Whatever you are doing here, copy it to the lifts that are not moving.` });
+  }
+  if (A.comp && A.comp.leanMass && A.comp.leanMass.n >= 10) {
+    const lm = A.comp.leanMass, wt = A.comp.weight;
+    const losing = lm.net < -0.3;
+    F.push({ sev: losing ? "crit" : "info",
+      t: losing ? "You are slowly losing lean mass." : "Lean mass is holding.",
+      d: `Lean body mass ${lm.first5} → ${lm.last5} (net <b>${lm.net > 0 ? "+" : ""}${lm.net}</b> across ${lm.n} readings)${wt ? `, with weight ${wt.first5} → ${wt.last5} (net ${wt.net > 0 ? "+" : ""}${wt.net})` : ""}. <em>Impedance estimates lean mass by conductivity, so hydration alone can move it — treat this as a signal only when it agrees with your lifts.</em>` });
+  }
+  if (A.flags.length) {
+    F.push({ sev: "info", t: `${A.flags.length} set${A.flags.length > 1 ? "s" : ""} probably miscounted.`,
+      d: `Rep jumps of 50%+ at the same or heavier load than the previous set — physiologically very unlikely mid-run. ${A.flags.slice(0, 3).map((f) => `${f.name} on ${f.date} (${f.prev} → ${f.now})`).join("; ")}. Seated, arm-supported, short-travel movements are where wrist-based counting struggles most.` });
+  }
+  return F;
+}
+
+
+/* ===== /CORE ===== */
+
+/* ---------------------------------------------------------------- storage */
+const KEY="ledger.v1", _mem={};
+const store={
+  get(k){try{return localStorage.getItem(k)}catch(e){return _mem[k]??null}},
+  set(k,v){try{localStorage.setItem(k,v)}catch(e){_mem[k]=v}}
+};
+let DB=load();
+function load(){
+  const raw=store.get(KEY);
+  if(raw){try{const d=JSON.parse(raw);
+    (d.workouts||[]).forEach(w=>{w.start=new Date(w.start);if(w.end)w.end=new Date(w.end);});
+    return d;}catch(e){console.warn("store unreadable, starting fresh");}}
+  return {workouts:[],health:null,configs:{},importedAt:null,healthAt:null};
+}
+function save(){store.set(KEY,JSON.stringify(DB));}
+
+let A=null,FIND=[];
+function recompute(){
+  if(!DB.workouts.length){A=null;FIND=[];return;}
+  A=analyse(DB.workouts,DB.health);
+  FIND=buildFindings(A);
+}
+recompute();
+
+/* ---------------------------------------------------------------- helpers */
+const $=i=>document.getElementById(i);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nice=m=>({lowerBack:"Lower back",hamstrings:"Hamstrings"}[m]||m.charAt(0).toUpperCase()+m.slice(1));
+const CS=()=>getComputedStyle(document.documentElement);
+const C=n=>CS().getPropertyValue(n).trim();
+const shortDate=s=>new Date(s+"T12:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"});
+const BADGE={increase:["up","+ weight"],doubleIncrease:["up","++ weight"],addReps:["","+ rep"],
+ hold:["hold","hold"],consolidate:["hold","repeat load"],deload:["down","deload"],needsCalibration:["","set weight"]};
+
+/* ---------------------------------------------------------------- views */
+let tab="today", trendEx=null;
+function go(t){tab=t;render();scrollTo(0,0);}
+function render(){
+  document.querySelectorAll("nav button").forEach(b=>
+    b.setAttribute("aria-current",b.dataset.tab===tab?"page":"false"));
+  const el=$("app");
+  if(!DB.workouts.length&&tab!=="data"){el.innerHTML=viewEmpty();return;}
+  el.innerHTML=tab==="today"?viewToday():tab==="insights"?viewInsights():
+               tab==="trends"?viewTrends():viewData();
+  if(tab==="trends")drawTrends();
+  if(tab==="insights")drawVolume();
+}
+
+function viewEmpty(){
+  return `<header><h1>Ledger</h1></header>
+  <div class="empty">No data yet.<br><br>Open <b>Data</b> and import your Motra export to begin.</div>
+  <button class="btn" onclick="go('data')">Go to Data</button>`;
+}
+
+/* ---- Today: what to lift next ---- */
+function viewToday(){
+  const rows=A.progress.filter(p=>p.n>=1).map(p=>{
+    const cfg=DB.configs[p.name]||defaultConfig(p.name,p.muscles);
+    const hist=p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met}));
+    const pr=nextPrescription(hist,cfg);
+    return {p,pr,cfg};
+  });
+  // Lead with what is stalling or sliding — that is where a decision is owed.
+  const order={regressing:0,stalled:1,noisy:2,tooFew:3,progressing:4};
+  rows.sort((a,b)=>(order[a.p.verdict]??9)-(order[b.p.verdict]??9));
+
+  const list=rows.map(({p,pr})=>{
+    const [cls,label]=BADGE[pr.decision]||["",""];
+    const line=pr.weight==null?"Set a starting weight":
+      `${pr.weight} lb × ${pr.targetReps} × ${pr.sets} sets`;
+    return `<button class="ex" onclick="showWhy('${esc(p.name).replace(/'/g,"\\'")}')">
+      <span><span class="name">${esc(p.name)}</span><span class="presc">${line}</span></span>
+      <span class="badge ${cls}">${esc(label)}</span></button>`;
+  }).join("");
+
+  return `<header><h1>Next session</h1><span class="sub">${A.sessions} sessions · ${A.end}</span></header>
+  <p class="cap">Prescriptions from double progression: hold the load and add a rep until you top the
+  range on every set, then add the smallest jump. Tap any lift for the reasoning.</p>
+  <div class="card">${list}</div>`;
+}
+function showWhy(name){
+  const p=A.progress.find(x=>x.name===name);if(!p)return;
+  const cfg=DB.configs[name]||defaultConfig(name,p.muscles);
+  const pr=nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met})),cfg);
+  const hist=p.pts.slice(-6).map(x=>`${shortDate(x.date)} — ${x.sets.map(s=>`${s.reps}×${s.weight}`).join("  ")}`).join("\n");
+  alert(`${name}\n\n${pr.reason}\n\nTrend: ${p.slope>0?"+":""}${p.slope} lb/wk (R² ${p.r2}, ${p.n} sessions) — ${p.verdict}\n\nRecent:\n${hist}`);
+}
+
+/* ---- Insights ---- */
+function viewInsights(){
+  const under=A.volume.filter(v=>v.status==="under"||v.status==="zero").length;
+  return `<header><h1>Insights</h1><span class="sub">${A.start} → ${A.end}</span></header>
+  <div class="tiles">
+   <div class="tile"><div class="l">Sessions</div><div class="v">${A.sessions}</div>
+     <div class="d">${(A.sessions/A.weeks).toFixed(1)}/wk over ${A.weeks} weeks</div></div>
+   <div class="tile"><div class="l">Rest : work</div><div class="v">${A.ratio}:1</div>
+     <div class="d">${A.restMed}s rest vs ${Math.round(A.tutMed)}s set</div></div>
+   <div class="tile"><div class="l">Below minimum</div><div class="v" style="color:var(--critical)">${under}<span style="font-size:15px;color:var(--muted)"> of ${A.volume.length}</span></div>
+     <div class="d">muscle groups under the floor</div></div>
+   <div class="tile"><div class="l">Volume</div><div class="v">${(A.totalVolume/1000).toFixed(0)}K</div>
+     <div class="d">lb, per-limb loads doubled</div></div>
+  </div>
+  <div class="card">${FIND.map((f,i)=>
+    `<div class="finding"><div class="rank ${f.sev}">${i+1}</div>
+     <div><h3>${f.t}</h3><p>${f.d}</p></div></div>`).join("")}</div>
+  <h2 style="margin-top:22px">Weekly sets per muscle</h2>
+  <p class="cap">Bar is your weekly rate; the pale band is the range that generally drives growth.
+  A set counts toward every muscle Motra tags — generous, so reality is lower than shown.</p>
+  <div class="legend">
+   <span><i class="sw" style="background:var(--good)"></i>in range</span>
+   <span><i class="sw" style="background:var(--warning)"></i>below minimum</span>
+   <span><i class="sw" style="background:var(--grid)"></i>target range</span></div>
+  <div class="card"><div id="volchart"></div></div>`;
+}
+
+function drawVolume(){
+  const host=$("volchart");if(!host)return;
+  const rows=A.volume,W=560,ml=86,mr=46,top=8,rh=29,H=top+rows.length*rh+18;
+  const max=Math.max(...rows.map(r=>Math.max(r.hi,r.perWeek)))*1.1;
+  const x=v=>ml+v/max*(W-ml-mr);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly sets per muscle against target ranges">`;
+  for(let g=0;g<=max;g+=5)s+=`<line x1="${x(g)}" x2="${x(g)}" y1="${top}" y2="${top+rows.length*rh-8}" stroke="${C('--grid')}"/>
+   <text x="${x(g)}" y="${H-4}" font-size="10" fill="${C('--muted')}" text-anchor="middle">${g}</text>`;
+  rows.forEach((r,i)=>{
+   const y=top+i*rh,col=r.status==="ok"?C('--good'):C('--warning');
+   s+=`<text x="${ml-8}" y="${y+15}" font-size="12" fill="${C('--text-secondary')}" text-anchor="end">${nice(r.muscle)}</text>
+    <rect x="${x(r.lo)}" y="${y+2}" width="${Math.max(0,x(r.hi)-x(r.lo))}" height="18" rx="3" fill="${C('--grid')}"/>
+    <rect x="${ml}" y="${y+6}" width="${Math.max(2,x(r.perWeek)-ml)}" height="10" rx="3" fill="${col}"/>
+    <text x="${W-mr+7}" y="${y+15}" font-size="12" fill="${C('--text-primary')}" style="font-variant-numeric:tabular-nums">${r.perWeek}</text>`;
+  });
+  host.innerHTML=s+"</svg>";
+}
+
+/* ---- Trends ---- */
+function viewTrends(){
+  const withN=A.progress.filter(p=>p.n>=3);
+  if(!trendEx||!withN.find(p=>p.name===trendEx))trendEx=withN.length?withN[withN.length-1].name:null;
+  const chips=withN.map(p=>`<button class="chip" aria-pressed="${p.name===trendEx}"
+    onclick="trendEx='${esc(p.name).replace(/'/g,"\\'")}';render()">${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</button>`).join("");
+  const cls=v=>v==="progressing"?"p-prog":v==="regressing"?"p-reg":v==="stalled"?"p-flat":"p-noise";
+  const lbl=v=>v==="progressing"?"▲ progressing":v==="regressing"?"▼ regressing":v==="stalled"?"■ stalled":"~ noisy";
+
+  const comp=A.comp&&A.comp.leanMass?`
+   <h2 style="margin-top:22px">Body composition</h2>
+   <p class="cap">Endpoint means, not just the fitted slope — a hump mid-window can produce a
+   significant-looking trend with almost no net change.</p>
+   <div class="card"><table><thead><tr><th>Metric</th><th>First 5</th><th>Last 5</th><th>Net</th><th>n</th></tr></thead><tbody>
+   ${["weight","leanMass","bodyFat","restingHR","hrv"].filter(k=>A.comp[k]).map(k=>{
+     const c=A.comp[k];
+     return `<tr><td>${({weight:"Weight",leanMass:"Lean mass",bodyFat:"Body fat %",restingHR:"Resting HR",hrv:"HRV"})[k]}</td>
+      <td>${c.first5}</td><td>${c.last5}</td>
+      <td style="color:${c.net<0?'var(--critical)':c.net>0?'var(--good)':'var(--muted)'}">${c.net>0?"+":""}${c.net}</td>
+      <td>${c.n}</td></tr>`;}).join("")}
+   </tbody></table></div>`:
+   `<div class="card"><p class="small secondary" style="margin:0">No Health data loaded. Import a
+    Health Auto Export JSON in <b>Data</b> to see weight, lean mass, body fat, resting HR and HRV trends.</p></div>`;
+
+  return `<header><h1>Trends</h1></header>
+  <div class="chips">${chips}</div>
+  <div class="card"><h2>${esc(trendEx||"")}</h2>
+    <p class="cap" id="trendcap"></p><div id="exchart"></div></div>
+  <h2 style="margin-top:22px">All lifts</h2>
+  <div class="card"><table><thead><tr><th>Lift</th><th>n</th><th>lb/wk</th><th>R²</th><th></th></tr></thead><tbody>
+   ${A.progress.filter(p=>p.n>=3).map(p=>`<tr><td>${esc(p.name.length>26?p.name.slice(0,25)+"…":p.name)}</td>
+     <td>${p.n}</td><td>${p.slope>0?"+":""}${p.slope}</td><td>${p.r2.toFixed(2)}</td>
+     <td><span class="pill ${cls(p.verdict)}">${lbl(p.verdict)}</span></td></tr>`).join("")}
+  </tbody></table></div>
+  <h2 style="margin-top:22px">Rest vs set duration</h2>
+  <p class="cap">Median rest against median time under tension, per lift.</p>
+  <div class="legend"><span><i class="sw" style="background:var(--series-1)"></i>rest</span>
+   <span><i class="sw" style="background:var(--series-2)"></i>under tension</span></div>
+  <div class="card"><div id="restchart"></div></div>
+  ${comp}`;
+}
+
+function drawTrends(){
+  const p=A.progress.find(x=>x.name===trendEx);
+  if(p){
+    const cap=$("trendcap");
+    if(cap)cap.textContent=`Estimated 1RM of the top set, ${p.n} sessions. `
+      +`${p.slope>0?"+":""}${p.slope} lb/week, R² ${p.r2.toFixed(2)} — `
+      +(p.r2<0.4?"low R² means the line explains little; treat as noise.":"a well-fitted trend.");
+    const host=$("exchart");
+    const pts=p.pts.map(x=>({d:x.date,v:x.e1rm}));
+    if(host&&pts.length>=2){
+      const W=560,H=200,ml=40,mr=44,mt=12,mb=26;
+      const ys=pts.map(q=>q.v),lo=Math.min(...ys),hi=Math.max(...ys);
+      const pad=(hi-lo)*.18||Math.max(2,hi*.05),y0=lo-pad,y1=hi+pad;
+      const X=i=>ml+i*(W-ml-mr)/(pts.length-1),Y=v=>mt+(1-(v-y0)/(y1-y0))*(H-mt-mb);
+      const path=pts.map((q,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(q.v).toFixed(1)}`).join(" ");
+      let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated one rep max over ${pts.length} sessions">`;
+      const step=Math.max(1,Math.round((y1-y0)/3));
+      for(let g=Math.ceil(y0/step)*step;g<=y1;g+=step)
+        s+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(g)}" y2="${Y(g)}" stroke="${C('--grid')}"/>
+         <text x="${ml-6}" y="${Y(g)+4}" font-size="10" fill="${C('--muted')}" text-anchor="end">${g}</text>`;
+      s+=`<path d="${path} L${X(pts.length-1).toFixed(1)},${H-mb} L${ml},${H-mb} Z" fill="${C('--series-1')}" opacity=".10"/>
+       <path d="${path}" fill="none" stroke="${C('--series-1')}" stroke-width="2" stroke-linejoin="round"/>
+       <circle cx="${X(pts.length-1)}" cy="${Y(ys[ys.length-1])}" r="4.5" fill="${C('--series-1')}" stroke="${C('--surface-1')}" stroke-width="2"/>
+       <text x="${X(pts.length-1)+8}" y="${Y(ys[ys.length-1])+4}" font-size="12" font-weight="600" fill="${C('--text-primary')}">${Math.round(ys[ys.length-1])}</text>
+       <text x="${ml}" y="${H-6}" font-size="10" fill="${C('--muted')}">${shortDate(pts[0].d)}</text>
+       <text x="${W-mr}" y="${H-6}" font-size="10" fill="${C('--muted')}" text-anchor="end">${shortDate(pts[pts.length-1].d)}</text>`;
+      host.innerHTML=s+"</svg>";
+    }
+  }
+  const rh=$("restchart");
+  if(rh){
+    const rows=A.restByEx.slice(0,14),W=560,ml=190,mr=48,top=10,gap=30,H=top+rows.length*gap+16;
+    const max=Math.max(...rows.map(r=>r.rest))*1.1;
+    const x=v=>ml+v/max*(W-ml-mr);
+    let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Median rest versus set duration per lift">`;
+    for(let g=0;g<=max;g+=60)s+=`<line x1="${x(g)}" x2="${x(g)}" y1="${top}" y2="${top+rows.length*gap-10}" stroke="${C('--grid')}"/>
+     <text x="${x(g)}" y="${H-3}" font-size="10" fill="${C('--muted')}" text-anchor="middle">${g/60}m</text>`;
+    rows.forEach((r,i)=>{
+     const y=top+i*gap,nm=r.name.length>25?r.name.slice(0,24)+"…":r.name;
+     s+=`<text x="${ml-8}" y="${y+13}" font-size="11.5" fill="${C('--text-secondary')}" text-anchor="end">${esc(nm)}</text>
+      <rect x="${ml}" y="${y+2}" width="${Math.max(2,x(r.rest)-ml)}" height="8" rx="3" fill="${C('--series-1')}"/>
+      <rect x="${ml}" y="${y+12}" width="${Math.max(2,x(r.tut)-ml)}" height="8" rx="3" fill="${C('--series-2')}"/>
+      <text x="${W-mr+6}" y="${y+13}" font-size="11" fill="${C('--text-primary')}" style="font-variant-numeric:tabular-nums">${Math.round(r.rest)}s</text>`;
+    });
+    rh.innerHTML=s+"</svg>";
+  }
+}
+
+/* ---- Data ---- */
+function viewData(){
+  const w=DB.workouts.length;
+  return `<header><h1>Data</h1></header>
+  <div class="card">
+   <h2>Import</h2>
+   <p class="cap">Motra: Settings → Export Workout Data (arrives by email). Health: the
+   Health Auto Export app, or any JSON it produces. Nothing leaves your phone — parsing happens here.</p>
+   <label class="drop" style="display:block">
+     <b>Motra export</b><br><span class="tiny">.xlsx or .csv</span>
+     <input type="file" accept=".xlsx,.csv,.xls" style="display:none" onchange="importMotra(this)"></label>
+   <label class="drop" style="display:block">
+     <b>Health Auto Export</b><br><span class="tiny">.json</span>
+     <input type="file" accept=".json" style="display:none" onchange="importHealth(this)"></label>
+   <div id="importmsg" class="small"></div>
+  </div>
+  <div class="card">
+   <h2>Loaded</h2>
+   <div class="status"><span class="secondary">Sessions</span><span>${w||"—"}</span></div>
+   <div class="status"><span class="secondary">Sets</span><span>${A?A.totalSets:"—"}</span></div>
+   <div class="status"><span class="secondary">Range</span><span>${A?A.start+" → "+A.end:"—"}</span></div>
+   <div class="status"><span class="secondary">Motra imported</span><span>${DB.importedAt||"never"}</span></div>
+   <div class="status"><span class="secondary">Health imported</span><span>${DB.healthAt||"never"}</span></div>
+   <div class="status"><span class="secondary">Health metrics</span><span>${DB.health?Object.keys(DB.health.metrics).length:0}</span></div>
+  </div>
+  <div class="card">
+   <h2>Backup</h2>
+   <p class="cap">Safari can clear web-app storage. Export occasionally — this file is your only copy.</p>
+   <button class="btn ghost" onclick="exportAll()">Export backup JSON</button>
+   <label class="btn ghost" style="display:block">Restore backup
+     <input type="file" accept=".json" style="display:none" onchange="restoreAll(this)"></label>
+   <button class="btn danger" onclick="wipe()">Erase everything</button>
+  </div>
+  ${A&&A.flags.length?`<div class="card"><h2>Probable miscounts</h2>
+   <p class="cap">Rep jumps of 50%+ at the same or heavier load — very unlikely mid-run, so these
+   read as auto-count errors rather than performances.</p>
+   <table><thead><tr><th>Date</th><th>Lift</th><th>Prev</th><th>Logged</th></tr></thead><tbody>
+   ${A.flags.map(f=>`<tr><td>${f.date.slice(5)}</td><td>${esc(f.name.slice(0,22))}</td><td>${f.prev}</td><td>${f.now}</td></tr>`).join("")}
+   </tbody></table></div>`:""}`;
+}
+
+function msg(t,ok){const e=$("importmsg");if(e)e.innerHTML=`<span class="${ok?"ok":"bad"}">${t}</span>`;}
+
+function importMotra(input){
+  const f=input.files[0];if(!f)return;
+  const isCSV=/\.csv$/i.test(f.name);
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      let rows;
+      if(isCSV){
+        rows=String(r.result).split(/\r?\n/).map(line=>{
+          // Minimal CSV split honouring quoted fields.
+          const out=[];let cur="",q=false;
+          for(const ch of line){
+            if(ch==='"'){q=!q;} else if(ch===","&&!q){out.push(cur);cur="";} else cur+=ch;
+          }
+          out.push(cur);return out;
+        });
+      }else{
+        if(typeof XLSX==="undefined"){
+          msg("Spreadsheet reader unavailable offline. Connect once, or export Motra as CSV.",false);return;
+        }
+        const wb=XLSX.read(new Uint8Array(r.result),{type:"array"});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:null});
+      }
+      const W=parseMotra(rows);
+      if(!W.length){msg("No workouts found in that file — is it the Motra export?",false);return;}
+      DB.workouts=W;DB.importedAt=new Date().toISOString().slice(0,10);
+      save();recompute();
+      msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.`,true);
+      setTimeout(()=>go("insights"),700);
+    }catch(e){msg("Could not read that file: "+e.message,false);}
+  };
+  isCSV?r.readAsText(f):r.readAsArrayBuffer(f);
+}
+
+function importHealth(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const H=parseHealthJSON(JSON.parse(r.result));
+      const n=Object.keys(H.metrics).length;
+      if(!n&&!H.workouts.length){msg("No recognisable metrics in that JSON.",false);return;}
+      DB.health=H;DB.healthAt=new Date().toISOString().slice(0,10);
+      save();recompute();
+      msg(`Imported ${n} metrics, ${H.workouts.length} workouts.`,true);
+      setTimeout(render,700);
+    }catch(e){msg("Could not read that JSON: "+e.message,false);}
+  };
+  r.readAsText(f);
+}
+
+function exportAll(){
+  const b=new Blob([JSON.stringify(DB)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b);a.download=`ledger-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();URL.revokeObjectURL(a.href);
+}
+function restoreAll(input){
+  const f=input.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);
+    if(!d.workouts)throw new Error("not a Ledger backup");
+    d.workouts.forEach(w=>{w.start=new Date(w.start);if(w.end)w.end=new Date(w.end);});
+    DB=d;save();recompute();render();alert("Restored.");
+  }catch(e){alert("Could not restore: "+e.message);}};
+  r.readAsText(f);
+}
+function wipe(){
+  if(confirm("Erase all imported data? Export a backup first if you want a copy.")){
+    DB={workouts:[],health:null,configs:{},importedAt:null,healthAt:null};
+    save();recompute();render();
+  }
+}
+
+render();
+</script>
+</body>
+</html>
