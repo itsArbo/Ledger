@@ -701,7 +701,7 @@ function analyse(workouts, health, rpeLog) {
     });
   });
 
-  const weightsByEx = {}, setCountsByEx = {}, topRepsByEx = {};
+  const weightsByEx = {}, setCountsByEx = {}, topRepsByEx = {}, restByExAll = {};
   workouts.forEach((w) => {
     const tops = {};
     w.sets.forEach((s) => { tops[s.exercise] = Math.max(tops[s.exercise] || 0, s.weight); });
@@ -711,12 +711,41 @@ function analyse(workouts, health, rpeLog) {
     });
     w.sets.forEach((s) => {
       (weightsByEx[s.exercise] = weightsByEx[s.exercise] || []).push(s.weight);
+      if (s.rest > 0) (restByExAll[s.exercise] = restByExAll[s.exercise] || []).push(s.rest);
     });
     const byEx2 = {};
     w.sets.forEach((s) => { byEx2[s.exercise] = (byEx2[s.exercise] || 0) + 1; });
     Object.entries(byEx2).forEach(([n, c]) =>
       (setCountsByEx[n] = setCountsByEx[n] || []).push(c));
   });
+
+  // Sets spent BELOW the session's top load for that exercise. This — not rest —
+  // is where the volume is going. Correcting an earlier error of mine: median
+  // rest here is ~3 min, which is what Schoenfeld et al. (2016) found BEST for
+  // both hypertrophy and strength in trained men (quad thickness +13.3% at 3 min
+  // vs +6.9% at 1 min). Telling this user to cut rest was wrong.
+  let topSets = 0, allSets = 0;
+  const rampByEx = {};
+  workouts.forEach((w) => {
+    const by = {};
+    w.sets.forEach((s) => (by[s.exercise] = by[s.exercise] || []).push(s));
+    Object.entries(by).forEach(([n, ss]) => {
+      const top = Math.max(...ss.map((x) => x.weight));
+      const a = ss.filter((x) => x.weight >= top - 1e-6).length;
+      topSets += a; allSets += ss.length;
+      rampByEx[n] = rampByEx[n] || { top: 0, all: 0 };
+      rampByEx[n].top += a; rampByEx[n].all += ss.length;
+    });
+  });
+  const rampPct = allSets ? Math.round((1 - topSets / allSets) * 100) : 0;
+
+  const COMPOUND = /squat|deadlift|press|row|pull ?down|dip|lunge/i;
+  const cRest = [], iRest = [];
+  workouts.forEach((w) => w.sets.forEach((s) => {
+    if (s.rest > 0) (COMPOUND.test(s.exercise) ? cRest : iRest).push(s.rest);
+  }));
+  const medOf = (a) => (a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0);
+
 
   const progress = Object.entries(byEx).map(([name, pts]) => {
     pts.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -737,6 +766,11 @@ function analyse(workouts, health, rpeLog) {
              increment: inferIncrement(weightsByEx[name] || []), ladder,
              typicalSets: inferSets(setCountsByEx[name] || []),
              repRange: inferRepRange(topRepsByEx[name] || []),
+             restMedian: (() => { const r = (restByExAll[name] || []).slice().sort((a, b) => a - b);
+               return r.length ? Math.round(r[r.length >> 1]) : null; })(),
+             isCompound: /squat|deadlift|press|row|pull ?down|dip|lunge/i.test(name),
+             rampPct: (() => { const v = rampByEx[name];
+               return v ? Math.round((1 - v.top / v.all) * 100) : null; })(),
              topReps: topRepsByEx[name] || [],
              setCounts: setCountsByEx[name] || [],
              muscles: pts[pts.length - 1].muscles, pts };
@@ -857,7 +891,8 @@ function analyse(workouts, health, rpeLog) {
     doseCurve.push([n, +(Math.log(1 + n / DOSE_K) / Math.log(1 + 30 / DOSE_K) * 100).toFixed(1)]);
   }
 
-  return { templates, doseCurve, days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
+  return { templates, doseCurve, rampPct, topSets, allSets, rampByEx,
+           compoundRest: medOf(cRest), isolationRest: medOf(iRest), days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
            totalVolume: Math.round(workouts.reduce((a, w) =>
              a + w.sets.reduce((b, s) => b + vol(s), 0), 0)),
@@ -881,9 +916,17 @@ function buildFindings(A) {
   const v = Object.fromEntries(A.volume.map((x) => [x.muscle, x]));
   const under = A.volume.filter((x) => x.status === "under" || x.status === "zero");
 
-  if (A.ratio >= 3) {
-    F.push({ sev: "crit", t: `You rest ${A.ratio}× longer than you lift.`,
-      d: `Median rest is <b>${Math.round(A.restMed)}s</b> against a <b>${Math.round(A.tutMed)}s</b> set, and <b>${A.over3}%</b> of sets rest over three minutes. If your heart rate is already back near baseline before the next set, that time is not recovery — it is just elapsed. Cutting isolation rest to 60–90s is the cheapest volume available to you.` });
+  if (A.rampPct >= 20) {
+    const worst = Object.entries(A.rampByEx || {})
+      .filter(([, v]) => v.all >= 8)
+      .map(([n, v]) => ({ n, pct: Math.round((1 - v.top / v.all) * 100) }))
+      .sort((a, b) => b.pct - a.pct).slice(0, 3);
+    F.push({ sev: "crit", t: `${A.rampPct}% of your sets are below your working weight.`,
+      d: `<b>${A.allSets - A.topSets} of ${A.allSets}</b> sets land under the top load you reach that day — the ramp. Worst: ${worst.map((x) => `<b>${x.n}</b> ${x.pct}%`).join(", ")}. Those sets cost the same time and the same rest as a working set but do far less. Doing them AT your working weight is the cheapest volume available to you, and it is also what unblocks every weight increase.` });
+  }
+  if (A.isolationRest >= 150) {
+    F.push({ sev: "info", t: `Your rest is fine — better than fine on compounds.`,
+      d: `Compound rest median <b>${A.compoundRest}s</b>, isolation <b>${A.isolationRest}s</b>. Schoenfeld et al. (2016) found 3 min beat 1 min in trained men for <em>both</em> hypertrophy and strength (quad thickness +13.3% vs +6.9%; triceps +7.0% vs no significant change), so your compound rest sits right where the evidence wants it. <b>I previously told you to cut this and I was wrong.</b> The one defensible trim is single-joint work, where the same authors recommend shorter rests — and only if you are short of time.` });
   }
   const lowVol = A.volume.filter((x) => x.marginal >= 50 && x.sets > 0 && !INCIDENTAL.has(x.muscle)).slice(0, 4);
   if (lowVol.length) {
@@ -935,7 +978,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.6d59714";
+const BUILD="2026-08-18.14e149c";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1091,6 +1134,20 @@ function viewDetail(){
     <div style="padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(${st.c}) 12%,transparent);
       font-size:13.5px;line-height:1.45;color:var(--ink-2)">${unlockHTML(pr)}</div>
   </div>
+  <div class="card"><div class="h2">Rest between sets</div>
+    <div class="sub">Your median here is <b>${p.restMedian!=null?p.restMedian+"s":"—"}</b>.
+      ${p.isCompound?
+        `This is a compound lift, and longer rest is the evidence-backed choice: Schoenfeld et al.
+         (2016) found 3 min beat 1 min in trained men for both size and strength. Anything from
+         <b>150–240s</b> is well supported — keep it.`:
+        `Single-joint work is where the same authors recommend trimming rest, so
+         <b>60–120s</b> is defensible if you are short of time. There is no benefit to cutting it
+         if you are not.`}</div>
+    ${p.rampPct!=null?`<div class="sub" style="margin-top:10px">
+      <b>${p.rampPct}%</b> of your sets here land below that day's top load. ${p.rampPct>=50?
+      "Most of your sets on this lift are not at your working weight — that is where the volume is going.":
+      "Reasonably efficient."}</div>`:""}
+  </div>
   <div class="card"><div class="h2">Rep range</div>
     <div class="sub" style="margin-bottom:12px">Hitting the top of this range on every set is what
       triggers a weight increase, so it has to sit where you actually train. Learned from your reps at
@@ -1171,9 +1228,10 @@ function viewInsights(){
   return `<div class="h1" style="margin-bottom:14px">Insights</div>
   <div class="hero">
     <div class="lbl">Biggest lever right now</div>
-    <div class="big">${A.ratio}:1</div>
-    <div class="cap">You rest ${A.restMed}s between sets that last ${A.tutMed}s.
-      Cutting isolation rest to 60–90s is free volume — the same session, more work.</div>
+    <div class="big">${A.rampPct}%</div>
+    <div class="cap">of your sets are below the working weight you reach that day —
+      ${A.allSets-A.topSets} of ${A.allSets}. They cost the same time and rest as a real set.
+      Doing them at your working weight is free volume, and it unblocks every weight increase.</div>
   </div>
   <div class="tiles">
     <div class="tile"><div class="lbl">Add sets here first</div>
