@@ -861,24 +861,46 @@ function analyse(workouts, health, rpeLog) {
   const medOf = (a) => (a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0);
 
 
+  // Personal bests must be things you ACTUALLY DID. Estimated 1RM is a derived
+  // number — leg press showed a "best" of 790 lb from 8 reps at 630, a weight
+  // never touched. Presenting that under a heading implying achievement is a
+  // misrepresentation. So bests are real sets; the estimate lives in Trends,
+  // where it is explained as an estimate.
   const prs = {};
   Object.entries(byEx).forEach(([name, pts]) => {
     const sorted = pts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
-    let bestE = 0, bestEDate = null, bestW = 0, bestWDate = null;
+    let heaviest = null, bestSet = null, bestE = 0;
     const hits = [];
     sorted.forEach((p) => {
-      const topW = Math.max(...p.sets.map((s) => s.weight));
+      const topW = Math.max(...p.sets.map((x) => x.weight));
+      const atTop = p.sets.filter((x) => x.weight === topW);
+      const repsAtTop = Math.max(...atTop.map((x) => x.reps));
       let got = null;
-      if (p.e1rm > bestE + 1e-6) { bestE = p.e1rm; bestEDate = p.date; got = "e1rm"; }
-      if (topW > bestW + 1e-6) { bestW = topW; bestWDate = p.date; got = got ? "both" : "weight"; }
-      if (got) hits.push({ date: p.date, kind: got, e1rm: p.e1rm, weight: topW });
+
+      // Heaviest weight ever, and most reps at that weight.
+      if (!heaviest || topW > heaviest.weight + 1e-6) {
+        heaviest = { weight: topW, reps: repsAtTop, date: p.date }; got = "weight";
+      } else if (Math.abs(topW - heaviest.weight) < 1e-6 && repsAtTop > heaviest.reps) {
+        heaviest = { weight: topW, reps: repsAtTop, date: p.date }; got = "reps";
+      }
+      // Best single set overall, ranked by estimated max but REPORTED as the set.
+      if (p.e1rm > bestE + 1e-6) {
+        bestE = p.e1rm;
+        bestSet = { weight: p.weight, reps: p.reps, date: p.date, e1rm: +p.e1rm.toFixed(1) };
+        got = got || "set";
+      }
+      if (got) hits.push({ date: p.date, kind: got });
     });
     const last = sorted[sorted.length - 1];
-    prs[name] = { bestE1RM: +bestE.toFixed(1), bestE1RMDate: bestEDate,
-                  bestWeight: bestW, bestWeightDate: bestWDate, history: hits,
-                  setLast: hits.length > 0 && hits[hits.length - 1].date === last.date,
-                  daysSince: bestEDate
-                    ? Math.round((new Date(last.date) - new Date(bestEDate)) / 864e5) : null };
+    // One clock, one meaning: days since you last did ANYTHING you had not done
+    // before on this lift. Mixing "days since best set" with "PR last session"
+    // let a lift claim both at once with different dates behind them.
+    const lastPR = hits.length ? hits[hits.length - 1].date : null;
+    prs[name] = {
+      heaviest, bestSet, history: hits, lastPR,
+      setLast: lastPR === last.date,
+      daysSince: lastPR ? Math.round((new Date(last.date) - new Date(lastPR)) / 864e5) : null,
+    };
   });
 
   const progress = Object.entries(byEx).map(([name, pts]) => {
@@ -1063,7 +1085,7 @@ function analyse(workouts, health, rpeLog) {
   }
   const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   const prsThisMonth = Object.values(prs)
-    .filter((r) => r.bestE1RMDate && r.bestE1RMDate >= monthAgo).length;
+    .filter((r) => r.history.some((hh) => hh.date >= monthAgo)).length;
   const untrained = Object.keys(BOUNDS).filter((m) => !msets[m]);
   const barely = Object.keys(BOUNDS)
     .filter((m) => msets[m] && msets[m] / weeks < 2);
@@ -1156,7 +1178,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.e4c66ce";
+const BUILD="2026-08-18.a447bbb";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1434,18 +1456,20 @@ function viewDetail(){
     <div style="padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(${st.c}) 12%,transparent);
       font-size:13.5px;line-height:1.45;color:var(--ink-2)">${unlockHTML(pr)}</div>
   </div>
-  ${p.pr?`<div class="card"><div class="h2">Best ever</div>
-    <div style="display:flex;gap:22px;flex-wrap:wrap">
-      <div><div class="lbl">Est. 1RM</div>
-        <div style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.bestE1RM}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
-        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.bestE1RMDate)}</div></div>
+  ${p.pr&&p.pr.heaviest?`<div class="card"><div class="h2">Best you have actually done</div>
+    <div style="display:flex;gap:26px;flex-wrap:wrap;margin-top:4px">
       <div><div class="lbl">Heaviest</div>
-        <div style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.bestWeight}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
-        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.bestWeightDate)}</div></div>
+        <div style="font-size:25px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.heaviest.reps} × ${p.pr.heaviest.weight}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
+        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.heaviest.date)}</div></div>
+      <div><div class="lbl">Best set</div>
+        <div style="font-size:25px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.bestSet.reps} × ${p.pr.bestSet.weight}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
+        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.bestSet.date)}</div></div>
     </div>
-    <div class="sub" style="margin-top:12px">${p.pr.setLast?
-      `<span style="color:var(--go);font-weight:600">You set a personal best last session.</span>`:
-      `Last personal best was <b>${p.pr.daysSince} days</b> ago.${p.pr.daysSince>35?" That is a long time on one lift — it is the clearest sign this one needs a change.":""}`}</div>
+    <div class="sub" style="margin-top:13px">${p.pr.setLast?
+      `<span style="color:var(--go);font-weight:600">You did something new last session.</span>`:
+      `<b>${p.pr.daysSince} days</b> since you last did anything on this lift you had not done before.${p.pr.daysSince>35?" On one lift that is a long time — the clearest sign this one needs a change.":""}`}</div>
+    <div class="tiny" style="margin-top:10px">Real sets only. Estimated max is a calculated figure, not
+      something you lifted — it lives in <b>Trends</b>, where it is labelled as an estimate.</div>
   </div>`:""}
   <div class="card"><div class="h2">Rest between sets</div>
     <div class="sub">Your median here is <b>${p.restMedian!=null?p.restMedian+"s":"—"}</b>.
@@ -1570,20 +1594,26 @@ function viewInsights(){
    </tbody></table></div>
 
   <div class="h2" style="margin-top:24px">Personal bests</div>
-  <div class="sub" style="margin-bottom:12px">A lift that has not set a best in over five weeks is
-   telling you something the weekly numbers do not.</div>
-  <div class="card"><table><thead><tr><th>Lift</th><th>Best e1RM</th><th>When</th></tr></thead><tbody>
-   ${A.progress.filter(p=>p.pr&&p.n>=4).slice().sort((a,b)=>(b.pr.daysSince||0)-(a.pr.daysSince||0))
-     .map(p=>`<tr><td>${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</td>
-     <td>${p.pr.bestE1RM}</td>
+  <div class="sub" style="margin-bottom:12px">The heaviest set you have genuinely performed, and how
+   long since you last did something on that lift you had not done before.</div>
+  <div class="card"><table><thead><tr><th>Lift</th><th>Heaviest set</th><th>Last new best</th></tr></thead><tbody>
+   ${A.progress.filter(p=>p.pr&&p.pr.heaviest&&p.n>=4).slice().sort((a,b)=>(b.pr.daysSince||0)-(a.pr.daysSince||0))
+     .map(p=>`<tr><td>${esc(p.name.length>20?p.name.slice(0,19)+"…":p.name)}</td>
+     <td>${p.pr.heaviest.reps} × ${p.pr.heaviest.weight} lb</td>
      <td style="color:var(${p.pr.setLast?"--go":p.pr.daysSince>35?"--stop":"--ink-3"})">${
        p.pr.setLast?"last session":p.pr.daysSince+"d ago"}</td></tr>`).join("")}
-  </tbody></table></div>
+  </tbody></table>
+  <div class="tiny" style="margin-top:12px;line-height:1.5">These are sets you actually performed.
+   Estimated max is a calculated number and is not shown here — it is in <b>Trends</b>, labelled as
+   an estimate.</div></div>
 
   <div class="h2" style="margin-top:24px">Where a set is worth most</div>
-  <div class="sub" style="margin-bottom:12px">Volume drives growth with diminishing returns and no
-   observed plateau (Pelland et al. 2025 — 67 studies, 2,058 people). A dial, not a threshold.</div>
-  <div class="card"><div id="dose"></div></div>
+  <div class="sub" style="margin-bottom:12px"><b>How to read it:</b> the line shows how much one extra
+   weekly set is worth, depending on how many you already do. Adding your 3rd set to a muscle does a
+   lot. Adding your 15th does much less — same effort, less return. Each dot is one of your muscles at
+   its current volume. <b>The higher the dot, the more you gain by adding a set there.</b></div>
+  <div class="card"><div id="dose"></div>
+    <div class="sub" id="dosecap" style="margin-top:12px"></div></div>
   <div class="card"><table><thead><tr><th>Muscle</th><th>Sets/wk</th><th>Days/wk</th><th>Next set</th></tr></thead>
    <tbody>${A.volume.filter(v=>v.sets>0).map(v=>`<tr><td style="text-transform:capitalize">${esc(nice(v.muscle))}</td>
     <td>${v.perWeek}</td><td>${v.freqPerWeek}</td>
@@ -1595,25 +1625,49 @@ function viewInsights(){
     matched volume.</div></div>`;
 }
 function drawDose(){
-  const host=$("dose");if(!host||!A.doseCurve)return;
-  const cv=A.doseCurve,W=560,H=200,ml=16,mr=16,mt=24,mb=30;
-  const X=n=>ml+n/30*(W-ml-mr),Y=v=>mt+(1-v/100)*(H-mt-mb);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Diminishing returns of weekly sets with your muscles plotted">`;
-  for(let g=0;g<=30;g+=10)s+=`<line x1="${X(g)}" x2="${X(g)}" y1="${mt}" y2="${H-mb}" stroke="${C('--line')}"/>
-    <text x="${X(g)}" y="${H-14}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="middle">${g}</text>`;
-  s+=`<path d="${cv.map((p,i)=>`${i?"L":"M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"
-    fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>`;
-  const placed=[];
-  A.volume.filter(v=>v.sets>0).forEach(v=>{
-    const x=X(v.perWeek),y=Y(Math.log(1+v.perWeek/5)/Math.log(7)*100);
-    const col=C(v.marginal>=50?"--go":v.marginal>=35?"--hold":"--ink-3");
-    s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${col}" stroke="${C('--card')}" stroke-width="2.5"/>`;
-    let ly=y-11;while(placed.some(p=>Math.abs(p.x-x)<58&&Math.abs(p.y-ly)<12))ly-=12;
-    placed.push({x,y:ly});
-    s+=`<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" fill="${C('--ink-2')}" text-anchor="middle">${nice(v.muscle)}</text>`;
+  const host=$("dose");if(!host||!A.volume)return;
+  const W=560,H=230,ml=44,mr=18,mt=20,mb=44;
+  // y is the MARGINAL value of the next set — the slope of the benefit curve —
+  // not cumulative benefit. The old chart plotted the latter, which rises and so
+  // implied "more is always better here", the opposite of the intended message.
+  const marg=n=>5/(5+n)*100;
+  const X=n=>ml+n/30*(W-ml-mr), Y=v=>mt+(1-v/100)*(H-mt-mb);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Value of one more weekly set, falling as weekly volume rises, with your muscles plotted">`;
+  [100,75,50,25].forEach(v=>{s+=`<line x1="${ml}" x2="${W-mr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C('--line')}"/>
+    <text x="${ml-8}" y="${Y(v)+4}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="end">${v}%</text>`;});
+  for(let g=0;g<=30;g+=10)s+=`<text x="${X(g)}" y="${H-24}" font-size="10.5" fill="${C('--ink-3')}" text-anchor="middle">${g}</text>`;
+  let d="";for(let n=0;n<=30;n+=0.5)d+=(n?"L":"M")+X(n).toFixed(1)+","+Y(marg(n)).toFixed(1);
+  s+=`<path d="${d}" fill="none" stroke="${C('--accent')}" stroke-width="2.5" stroke-linejoin="round"/>`;
+
+  const rows=A.volume.filter(v=>v.sets>0);
+  // Label selectively: the best and worst places to add a set. The table below
+  // carries every name, so labelling all twelve just makes an unreadable pile.
+  // Forearms and lower back are trained indirectly by nearly everything, so
+  // "add sets here first" is bad advice even when their marginal value is highest.
+  // Same exclusion the headline tile uses — it just never reached the chart.
+  const INC=new Set(["forearms","lowerBack"]);
+  const rankable=rows.filter(v=>!INC.has(v.muscle));
+  const sorted=(rankable.length?rankable:rows).slice().sort((a,b)=>b.marginal-a.marginal);
+  const label=new Set([sorted[0].muscle,sorted[sorted.length-1].muscle]);
+  rows.forEach(v=>{
+    const x=X(v.perWeek),y=Y(v.marginal);
+    const col=v.marginal>=50?C('--go'):v.marginal>=35?C('--hold'):C('--ink-3');
+    s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${label.has(v.muscle)?6:4.5}"
+      fill="${col}" stroke="${C('--card')}" stroke-width="2.5"/>`;
+    if(label.has(v.muscle))
+      s+=`<text x="${x.toFixed(1)}" y="${(y-13).toFixed(1)}" font-size="12" font-weight="650"
+        fill="${C('--ink')}" text-anchor="${v.perWeek>20?"end":"middle"}">${nice(v.muscle)} ${v.marginal}%</text>`;
   });
-  s+=`<text x="${W/2}" y="${H-2}" font-size="10" fill="${C('--ink-3')}" text-anchor="middle">weekly sets</text>`;
-  host.innerHTML=s+"</svg>";
+  s+=`<text x="${W/2}" y="${H-6}" font-size="11" fill="${C('--ink-3')}" text-anchor="middle">sets per week you already do</text>
+   <text x="2" y="${mt-6}" font-size="11" fill="${C('--ink-3')}">value of your next set</text></svg>`;
+  host.innerHTML=s;
+
+  const best=sorted[0],worst=sorted[sorted.length-1];
+  const cap=$("dosecap");
+  if(cap)cap.innerHTML=`Right now an extra <b>${nice(best.muscle)}</b> set (you do ${best.perWeek}/wk) is
+    worth about <b>${Math.round(best.marginal/worst.marginal*10)/10}×</b> as much as an extra
+    <b>${nice(worst.muscle)}</b> set (${worst.perWeek}/wk). Same set, same hour in the gym, very
+    different return. That is the whole point of the curve.`;
 }
 
 /* ================================================================= TRENDS */
