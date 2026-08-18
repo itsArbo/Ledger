@@ -93,7 +93,9 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;
 .status{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px}
 .status:last-child{border-bottom:none}
 details summary{cursor:pointer;color:var(--muted);font-size:13px;padding:7px 0}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chips{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto}
 .chip{padding:8px 13px;border-radius:999px;border:1px solid var(--border);
  background:transparent;color:var(--text-secondary);font-size:14px;line-height:1}
 .chip[aria-pressed=true]{background:var(--series-1);border-color:var(--series-1);color:#fff;font-weight:600}
@@ -168,9 +170,50 @@ const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
  * "All Sets" header. So it needs a state machine, not a CSV reader.
  * Accepts array-of-arrays so CSV and XLSX paths converge.
  */
+/**
+ * Excel serial date → JS Date. Excel's epoch is 1899-12-30 in the 1900 system
+ * (the off-by-two is Excel's famous 1900-leap-year bug, preserved for compat).
+ */
+function excelSerialToDate(n) {
+  return new Date(Math.round(n * 86400000) + Date.UTC(1899, 11, 30));
+}
+
+/**
+ * Coerce whatever the spreadsheet reader handed us into a Date.
+ *
+ * This must be locale-independent. Reading with formatted values yields
+ * "6/11/26 4:31 PM" on one device and "2026-06-11 16:31:14" on another, so the
+ * same file parsed on a laptop and a phone produced different session dates —
+ * which silently changed week bucketing and every per-week figure.
+ */
+function toDate(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  if (typeof v === "number") {
+    // Motra timestamps land in the 40k-50k range as Excel serials.
+    if (v > 20000 && v < 80000) return excelSerialToDate(v);
+    return null;
+  }
+  const s = String(v).trim();
+  // ISO-ish "2026-06-11 16:31:14" or "2026-06-11T16:31:14" — parse the parts
+  // explicitly rather than trusting Date's implementation-defined behaviour.
+  let m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
 function parseMotra(rows) {
   const S = (v) => (v === null || v === undefined ? "" : String(v).trim());
-  const F = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  // Strip thousands separators and stray spaces before parsing. A locale that
+  // formats 1000 as "1,000" would otherwise yield 1.
+  const F = (v) => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    const n = parseFloat(String(v).replace(/[,\s]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
   const dur = (t) => {
     const m = /^(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$/.exec(S(t));
     if (!m) return 0;
@@ -190,16 +233,15 @@ function parseMotra(rows) {
               durationS: 0, totalSets: 0, calories: 0, tvl: 0,
               zones: [0, 0, 0, 0, 0], sets: [] };
       out.push(cur);
-      const d = new Date(S(raw[1]).replace(" ", "T"));
-      cur.start = isNaN(d) ? null : d;
+      cur.start = toDate(raw[1]);
       inSets = false;
       return;
     }
     if (!cur) { if (c0 && !c[1]) pendingTitle = c0; return; }
 
     if (c0 === "Workout End") {
-      const d = new Date(S(raw[1]).replace(" ", "T"));
-      if (!isNaN(d)) cur.end = d;
+      const e = toDate(raw[1]);
+      if (e) cur.end = e;
     } else if (c0 === "Total Duration (seconds)") cur.durationS = F(raw[1]);
     else if (c0 === "Total Sets") cur.totalSets = F(raw[1]);
     else if (c0 === "Burned Calories") cur.calories = F(raw[1]);
@@ -218,7 +260,7 @@ function parseMotra(rows) {
     }
   });
 
-  return out.filter((w) => w.sets.length > 0).sort((a, b) => a.start - b.start);
+  return out.filter((w) => w.sets.length > 0 && w.start).sort((a, b) => a.start - b.start);
 }
 
 /* ---------------------------------------------------------------- Health parse */
@@ -270,11 +312,27 @@ const METRIC_ALIASES = {
   sleep: ["sleep_analysis", "sleepanalysis"],
 };
 
+// Metric names that must never be matched loosely, because a shorter alias is a
+// substring of them. `body_mass` is contained in `body_mass_index`, so a naive
+// includes() match silently returns BMI when asked for weight — and BMI numbers
+// look plausible enough as kilograms that it would never be noticed.
+const NEVER_LOOSE = ["body_mass_index", "bodymassindex"];
+
 function findMetric(metrics, key) {
-  const want = METRIC_ALIASES[key] || [key];
-  for (const name of Object.keys(metrics)) {
-    const n = name.toLowerCase().replace(/[^a-z]/g, "_");
-    if (want.some((w) => n.includes(w.replace(/[^a-z]/g, "_")))) return metrics[name];
+  const want = (METRIC_ALIASES[key] || [key]).map((w) => w.replace(/[^a-z]/g, "_"));
+  const norm = (s) => s.toLowerCase().replace(/[^a-z]/g, "_");
+  const names = Object.keys(metrics);
+
+  // Exact match wins outright.
+  for (const name of names) {
+    if (want.includes(norm(name))) return metrics[name];
+  }
+  // Then substring — but skip names that are known superstrings of an alias,
+  // unless this key is explicitly asking for one of them.
+  for (const name of names) {
+    const n = norm(name);
+    if (NEVER_LOOSE.includes(n) && !want.includes(n)) continue;
+    if (want.some((w) => n.includes(w))) return metrics[name];
   }
   return null;
 }
@@ -393,6 +451,16 @@ function linreg(xs, ys) {
   return { slope, r2, n };
 }
 
+/** Stable fingerprint of the parsed data. Two devices showing the same string
+ *  parsed identically; different strings localise the disagreement instantly. */
+function fingerprint(workouts) {
+  const vol = (s) => s.weight * s.reps * (PER_LIMB.has(s.exercise) ? 2 : 1);
+  const sets = workouts.reduce((a, w) => a + w.sets.length, 0);
+  const tot = Math.round(workouts.reduce((a, w) => a + w.sets.reduce((b, s) => b + vol(s), 0), 0));
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return `${workouts.length}s/${sets}sets/${tot}lb/${iso(workouts[0].start)}-${iso(workouts[workouts.length-1].start)}`;
+}
+
 function analyse(workouts, health) {
   const days = (workouts[workouts.length - 1].start - workouts[0].start) / 864e5 + 1;
   const weeks = days / 7;
@@ -495,9 +563,17 @@ function analyse(workouts, health) {
   // Body composition — only when Health data is loaded.
   let comp = null;
   if (health && health.metrics) {
+    // Only look at the last 180 days. Sparse historic readings — four weigh-ins
+    // spread across six years, say — would otherwise land in the "first 5"
+    // average and make a six-year gap look like a recent trend.
+    const WINDOW_DAYS = 180;
     const grab = (k) => {
-      const rows = findMetric(health.metrics, k);
+      let rows = findMetric(health.metrics, k);
       if (!rows || rows.length < 5) return null;
+      const newest = new Date(rows[rows.length - 1].t);
+      const cutoff = new Date(newest.getTime() - WINDOW_DAYS * 864e5);
+      const recent = rows.filter((r) => new Date(r.t) >= cutoff);
+      if (recent.length >= 8) rows = recent;
       const t0 = new Date(rows[0].t);
       const { slope, r2, n } = linreg(rows.map((r) => (new Date(r.t) - t0) / (30.44 * 864e5)),
                                       rows.map((r) => r.v));
@@ -585,6 +661,8 @@ function buildFindings(A) {
 
 
 /* ===== /CORE ===== */
+
+const BUILD="2026-08-18.2c97e0e";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1", _mem={};
@@ -729,7 +807,7 @@ function viewTrends(){
   const lbl=v=>v==="progressing"?"▲ progressing":v==="regressing"?"▼ regressing":v==="stalled"?"■ stalled":"~ noisy";
 
   const comp=A.comp&&A.comp.leanMass?`
-   <h2 style="margin-top:22px">Body composition</h2>
+   <h2 style="margin:0 0 8px">Body composition</h2>
    <p class="cap">Endpoint means, not just the fitted slope — a hump mid-window can produce a
    significant-looking trend with almost no net change.</p>
    <div class="card"><table><thead><tr><th>Metric</th><th>First 5</th><th>Last 5</th><th>Net</th><th>n</th></tr></thead><tbody>
@@ -744,6 +822,8 @@ function viewTrends(){
     Health Auto Export JSON in <b>Data</b> to see weight, lean mass, body fat, resting HR and HRV trends.</p></div>`;
 
   return `<header><h1>Trends</h1></header>
+  ${comp}
+  <h2 style="margin-top:22px">Per-lift progression</h2>
   <div class="chips">${chips}</div>
   <div class="card"><h2>${esc(trendEx||"")}</h2>
     <p class="cap" id="trendcap"></p><div id="exchart"></div></div>
@@ -757,8 +837,7 @@ function viewTrends(){
   <p class="cap">Median rest against median time under tension, per lift.</p>
   <div class="legend"><span><i class="sw" style="background:var(--series-1)"></i>rest</span>
    <span><i class="sw" style="background:var(--series-2)"></i>under tension</span></div>
-  <div class="card"><div id="restchart"></div></div>
-  ${comp}`;
+  <div class="card"><div id="restchart"></div></div>`;
 }
 
 function drawTrends(){
@@ -830,6 +909,8 @@ function viewData(){
    <div class="status"><span class="secondary">Sessions</span><span>${w||"—"}</span></div>
    <div class="status"><span class="secondary">Sets</span><span>${A?A.totalSets:"—"}</span></div>
    <div class="status"><span class="secondary">Range</span><span>${A?A.start+" → "+A.end:"—"}</span></div>
+   <div class="status"><span class="secondary">Fingerprint</span><span class="tiny">${DB.workouts.length?fingerprint(DB.workouts):"—"}</span></div>
+   <div class="status"><span class="secondary">App build</span><span class="tiny">${BUILD}</span></div>
    <div class="status"><span class="secondary">Motra imported</span><span>${DB.importedAt||"never"}</span></div>
    <div class="status"><span class="secondary">Health imported</span><span>${DB.healthAt||"never"}</span></div>
    <div class="status"><span class="secondary">Health metrics</span><span>${DB.health?Object.keys(DB.health.metrics).length:0}</span></div>
@@ -840,6 +921,7 @@ function viewData(){
    <button class="btn ghost" onclick="exportAll()">Export backup JSON</button>
    <label class="btn ghost" style="display:block">Restore backup
      <input type="file" accept=".json" style="display:none" onchange="restoreAll(this)"></label>
+   <button class="btn ghost" onclick="location.reload(true)||location.replace(location.pathname+'?v='+Date.now())">Force reload latest version</button>
    <button class="btn danger" onclick="wipe()">Erase everything</button>
   </div>
   ${A&&A.flags.length?`<div class="card"><h2>Probable miscounts</h2>
@@ -873,13 +955,13 @@ function importMotra(input){
           msg("Spreadsheet reader unavailable offline. Connect once, or export Motra as CSV.",false);return;
         }
         const wb=XLSX.read(new Uint8Array(r.result),{type:"array"});
-        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:null});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,cellDates:true,defval:null});
       }
       const W=parseMotra(rows);
       if(!W.length){msg("No workouts found in that file — is it the Motra export?",false);return;}
       DB.workouts=W;DB.importedAt=new Date().toISOString().slice(0,10);
       save();recompute();
-      msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.`,true);
+      msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.<br><span class="tiny muted">fingerprint ${fingerprint(W)}</span>`,true);
       setTimeout(()=>go("insights"),700);
     }catch(e){msg("Could not read that file: "+e.message,false);}
   };
@@ -897,7 +979,7 @@ function importHealth(input){
       DB.health=H;DB.healthAt=new Date().toISOString().slice(0,10);
       save();recompute();
       msg(`Imported ${n} metrics, ${H.workouts.length} workouts.`,true);
-      setTimeout(render,700);
+      setTimeout(()=>go("trends"),700);
     }catch(e){msg("Could not read that JSON: "+e.message,false);}
   };
   r.readAsText(f);
