@@ -1066,6 +1066,99 @@ function analyse(workouts, health, rpeLog) {
   }).filter((x) => x.recent > 0 || x.prior > 0)
     .sort((a, b) => a.delta - b.delta);
 
+  /**
+   * Day-by-day recommendations.
+   *
+   * "Add sets to triceps" is true but not actionable — you train on specific
+   * days with specific equipment. This maps the marginal-value ranking onto the
+   * sessions you actually run, and projects the effect honestly: adding N sets
+   * to a session you run F times a week adds N x F weekly sets, not N.
+   */
+  const tplFreq = {};
+  templates.forEach((t) => { tplFreq[t.title] = t.count / weeks; });
+
+  // Which exercises has he used for each muscle, and how often.
+  const exByMuscle = {};
+  workouts.forEach((w) => w.sets.forEach((st) => {
+    st.muscles.forEach((m) => {
+      exByMuscle[m] = exByMuscle[m] || {};
+      exByMuscle[m][st.exercise] = (exByMuscle[m][st.exercise] || 0) + 1;
+    });
+  }));
+
+  const marginalOf = (n) => Math.round(marginalValue(n) * 100);
+  const perWeekNow = {};
+  Object.entries(msets).forEach(([m, n]) => { perWeekNow[m] = n / weeks; });
+
+  const recommendations = templates.map((t) => {
+    const freq = Math.max(0.25, tplFreq[t.title] || 0.5);
+    // Muscles this day already touches.
+    const covered = {};
+    t.exercises.forEach((name) => {
+      const p = byEx[name];
+      if (p && p.length) p[p.length - 1].muscles.forEach((m) => { covered[m] = true; });
+    });
+    const cands = Object.keys(covered)
+      .filter((m) => !INCIDENTAL.has(m))
+      .filter((m) => (perWeekNow[m] || 0) < 12)     // past ~12 the return is thin
+      .map((m) => {
+        const now = perWeekNow[m] || 0;
+        const add = 2;                               // two sets: meaningful, not reckless
+        const after = now + add * freq;
+        // Prefer an exercise already in this session; else one used for that
+        // muscle elsewhere. Never invent a movement he has not performed.
+        const inDay = t.exercises.filter((n) => (exByMuscle[m] || {})[n]);
+        const anywhere = Object.entries(exByMuscle[m] || {}).sort((a, b) => b[1] - a[1]);
+        const pick = inDay[0] || (anywhere[0] ? anywhere[0][0] : null);
+        return { muscle: m, exercise: pick, addSets: add,
+                 from: +now.toFixed(1), to: +after.toFixed(1),
+                 marginalNow: marginalOf(now), marginalAfter: marginalOf(after) };
+      })
+      .filter((c) => c.exercise)
+      .sort((a, b) => b.marginalNow - a.marginalNow)
+      .slice(0, 2);
+    // Sets per session, broken down by muscle. Needed to price a frequency
+    // change honestly: a muscle trained on two different days does not scale
+    // with this one day's frequency. Scaling total weekly volume by this
+    // template's frequency double-counts and wildly overstates the gain.
+    const runs = workouts.filter((w) => (w.title || "").replace(/\s+/g, " ").trim() === t.title);
+    let setsHere = 0;
+    const perMuscleHere = {};
+    if (runs.length) {
+      setsHere = runs.reduce((a, w) => a + w.sets.length, 0) / runs.length;
+      runs.forEach((w) => w.sets.forEach((st) => st.muscles.forEach((m) => {
+        perMuscleHere[m] = (perMuscleHere[m] || 0) + 1;
+      })));
+      Object.keys(perMuscleHere).forEach((m) => { perMuscleHere[m] /= runs.length; });
+    }
+
+    // A day run once every three weeks cannot be fixed by adding sets to it: two
+    // extra sets at 0.3x/wk buys 0.6 weekly sets. Running it weekly is worth far
+    // more — but only by the amount THIS day contributes.
+    let frequency = null;
+    if (freq < 0.6 && cands.length && cands[0].marginalNow >= 45) {
+      const gain = cands.map((c) => {
+        const here = perMuscleHere[c.muscle] || 0;
+        const added = here * (1 - freq);              // extra weekly sets from this day alone
+        return { muscle: c.muscle, from: c.from, to: +(c.from + added).toFixed(1),
+                 setsHere: +here.toFixed(1) };
+      });
+      frequency = { current: +freq.toFixed(1), target: 1, setsHere: Math.round(setsHere), gain };
+    }
+    return { title: t.title, freq: +freq.toFixed(1), lastDate: t.lastDate,
+             setsPerSession: Math.round(setsHere), frequency, additions: cands };
+  }).filter((r) => r.additions.length || r.frequency);
+
+  // Muscles with no home in any session — adding sets is impossible until one
+  // of the days adopts them.
+  const homed = new Set();
+  templates.forEach((t) => t.exercises.forEach((name) => {
+    const p = byEx[name];
+    if (p && p.length) p[p.length - 1].muscles.forEach((m) => homed.add(m));
+  }));
+  const homeless = Object.keys(BOUNDS)
+    .filter((m) => !INCIDENTAL.has(m) && !homed.has(m) && (perWeekNow[m] || 0) < 6);
+
   const doseCurve = [];
   for (let n = 0; n <= 30; n += 0.5) {
     doseCurve.push([n, +(Math.log(1 + n / DOSE_K) / Math.log(1 + 30 / DOSE_K) * 100).toFixed(1)]);
@@ -1090,7 +1183,7 @@ function analyse(workouts, health, rpeLog) {
   const barely = Object.keys(BOUNDS)
     .filter((m) => msets[m] && msets[m] / weeks < 2);
 
-  return { templates, doseCurve, volumeTrend, prs, rampPct,
+  return { templates, recommendations, homeless, doseCurve, volumeTrend, prs, rampPct,
            streak, prsThisMonth, untrained, barely, sessionDays, topSets, allSets, warmSets, rampByEx,
            compoundRest: medOf(cRest), isolationRest: medOf(iRest), days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
@@ -1178,7 +1271,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.a447bbb";
+const BUILD="2026-08-18.8f53d1f";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1577,6 +1670,35 @@ function viewInsights(){
     <div class="tile"><div class="lbl">Sessions</div><div class="v">${A.sessions}</div>
       <div class="d">${(A.sessions/A.weeks).toFixed(1)}/wk across ${A.weeks} weeks</div></div>
   </div>
+  <div class="h2" style="margin-top:22px">What to change, day by day</div>
+  <div class="sub" style="margin-bottom:12px">Your own sessions, with the highest-value change for each.
+   Projections use how often you actually run that day — two sets on a session you do once a fortnight
+   buys almost nothing.</div>
+  ${(A.recommendations||[]).map(r=>`<div class="card">
+    <div class="row between" style="align-items:flex-start;margin-bottom:10px">
+      <div style="min-width:0"><div style="font-size:16px;font-weight:650;letter-spacing:-.01em">${esc(
+        r.title.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*/i,"")
+               .replace(/\s*Strength Session\s*$/i,"").trim())}</div>
+        <div class="tiny" style="margin-top:3px">${r.freq}× per week · ~${r.setsPerSession} sets a session</div></div>
+    </div>
+    ${r.frequency?`<div style="padding:13px 14px;border-radius:12px;margin-bottom:11px;
+      background:color-mix(in srgb,var(--stop) 13%,transparent)">
+      <div style="font-weight:650;font-size:14.5px;margin-bottom:5px">Run this weekly — it is worth more than any set you could add</div>
+      <div class="sub">${r.frequency.gain.map(g=>`<b>${nice(g.muscle)}</b> ${g.from} → <b>${g.to}</b> sets/wk`).join(" · ")}.
+        You currently run it <b>${r.frequency.current}×</b> a week, so most of what this session does is
+        simply not happening.</div></div>`:""}
+    ${r.additions.map(a=>`<div style="padding:12px 0;border-top:1px solid var(--line)">
+      <div style="font-size:14.5px;font-weight:600">+${a.addSets} sets of ${esc(a.exercise)}</div>
+      <div class="sub" style="margin-top:4px"><span style="text-transform:capitalize">${nice(a.muscle)}</span>
+        ${a.from} → <b>${a.to}</b> sets/wk. Next set after that drops from
+        ${a.marginalNow}% to ${a.marginalAfter}% value.</div></div>`).join("")}
+  </div>`).join("")}
+  ${(A.homeless||[]).length?`<div class="card" style="border-color:var(--hold)">
+    <div class="h2" style="margin-bottom:6px">No session trains these</div>
+    <div class="sub">${A.homeless.map(nice).join(", ")} — no amount of tuning fixes this; one of your
+      days has to adopt them, or they need a day of their own.</div></div>`:""}
+
+  <div class="h2" style="margin-top:24px">What the data says</div>
   <div class="card">${shown.map(f=>
     `<div class="find" style="--c:var(${cmap[f.sev]||"--accent"})"><div class="dot"></div>
      <div><h3>${f.t}</h3><p>${f.d}</p></div></div>`).join("")}
