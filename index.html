@@ -544,15 +544,35 @@ function nextPrescription(history, cfg) {
       reason: `Missed the target ${stalls} sessions running at ${fmt(top)} lb. Backing off to ${fmt(w)} to rebuild.` });
   }
 
-  // The ascending-ramp trap. If you ramp 8×70, 8×90, 8×110 you performed ONE
-  // set at your top load. Double progression cannot fire — it needs `sets` sets
-  // at a shared load to know the load is repeatable — so a naive engine would
-  // prescribe "+1 rep" forever and never once add weight. Rather than silently
-  // stalling, say the thing that actually unblocks progress: repeat the load.
-  if (atTop.length < cfg.sets && working.length >= 2) {
+  // Three distinct situations used to be collapsed into one, and the message
+  // described a ramp that had not necessarily happened:
+  //
+  //   RPE-CLEARED — you ramped, but logged an easy RPE on the top set. That is
+  //                 direct evidence the load is repeatable, and proximity to
+  //                 failure is the best-supported variable here, so it counts.
+  //   RAMPING     — several loads, only some at the top, no RPE to go on.
+  //                 Nothing shows the top load is repeatable. Repeat it.
+  //   FEWER SETS  — a single load, just fewer sets than you usually do.
+  //                 Nothing is unproven; there is simply less of it. Add a set.
+  const distinctLoads = new Set(working.map((s) => s.weight)).size;
+
+  if (distinctLoads > 1 && atTop.length < cfg.sets && avgRPE != null && avgRPE <= cfg.easyRPE) {
+    const step = cfg.increment;
+    return withUnlock({ decision: "increase",
+      weight: roundTo(top + step, cfg.increment), targetReps: cfg.repMin, sets: cfg.sets,
+      reason: `You only did ${atTop.length} set at ${fmt(top)} lb, but logged RPE ${fmt(avgRPE)} — well short of failure. That is enough evidence ${fmt(top)} is repeatable, so it adds ${fmt(step)} lb rather than making you prove it again.` });
+  }
+
+  if (distinctLoads > 1 && atTop.length < cfg.sets && working.length >= 2) {
     const topReps = Math.min(...atTop.map((s) => s.reps));
     return withUnlock({ decision: "consolidate", weight: top, targetReps: topReps, sets: cfg.sets,
-      reason: `You did ${atTop.length} set${atTop.length > 1 ? "s" : ""} at ${fmt(top)} lb and the rest lighter, so there is no way to tell whether ${fmt(top)} was repeatable or a one-off — and no rule can add load on that evidence. Do ${cfg.sets} sets at ${fmt(top)} lb for ${topReps} reps. Once you hold it across all ${cfg.sets}, weight increases resume automatically.` });
+      reason: `You ramped through ${distinctLoads} loads and only ${atTop.length} set${atTop.length > 1 ? "s" : ""} landed at ${fmt(top)} lb, so nothing shows ${fmt(top)} is repeatable. Do ${cfg.sets} sets at ${fmt(top)} lb for ${topReps} reps — or log an RPE of ${cfg.easyRPE} or below on the top set and it will add load without making you prove it twice.` });
+  }
+
+  if (distinctLoads === 1 && working.length < cfg.sets) {
+    const reps = Math.min(...working.map((s) => s.reps));
+    return withUnlock({ decision: "addSet", weight: top, targetReps: reps, sets: cfg.sets,
+      reason: `You did ${working.length} set${working.length > 1 ? "s" : ""} at ${fmt(top)} lb; you usually do ${cfg.sets}. Add the missing set at the same weight before chasing reps or load.` });
   }
 
   const pres = atTop.slice(0, cfg.sets);
@@ -573,9 +593,18 @@ function nextPrescription(history, cfg) {
   }
 
   const weakest = pres.length ? Math.min(...pres.map((s) => s.reps)) : cfg.repMin;
-  const target = Math.min(weakest + 1, cfg.repMax);
+  // Rep step scales with how far from failure you were. Adding one rep after an
+  // RPE 6 set wastes a session; chasing more after an RPE 10 set is not a rep
+  // problem, it is a recovery one.
+  let step = 1, note = "";
+  if (avgRPE != null && avgRPE <= cfg.easyRPE) {
+    step = 2; note = ` You logged RPE ${fmt(avgRPE)}, so it is asking for two more rather than one.`;
+  } else if (avgRPE != null && avgRPE >= 9.5) {
+    step = 0; note = ` You logged RPE ${fmt(avgRPE)} — at that effort, repeat the same reps and let the set get easier before chasing more.`;
+  }
+  const target = Math.min(weakest + step, cfg.repMax);
   return withUnlock({ decision: "addReps", weight: top, targetReps: target, sets: cfg.sets,
-    reason: `Holding ${fmt(top)} lb and chasing ${target} reps on every set (weakest last time was ${weakest}).` });
+    reason: `Holding ${fmt(top)} lb and ${step === 0 ? `repeating ${target} reps` : `chasing ${target} reps`} on every set (weakest last time was ${weakest}).${note}` });
 }
 
 /**
@@ -596,8 +625,9 @@ function unlockText(presc, cfg) {
     case "hold":
       return `Repeat ${fmt(presc.weight)} lb and log RPE ${cfg.rpeCap} or below → then it adds ${inc} lb.`;
     case "increase":
+      return `Load goes up ${inc} lb now. Reach ${cfg.repMax} reps on all ${cfg.sets} sets to trigger the next one.`;
     case "doubleIncrease":
-      return `Adding ${fmt(presc.weight - (presc.prevWeight || presc.weight)) || inc} lb now. Climb back to ${cfg.repMax} reps to trigger the next one.`;
+      return `Load goes up ${fmt(cfg.increment * 2)} lb now. Reach ${cfg.repMax} reps on all ${cfg.sets} sets to trigger the next one.`;
     case "deload":
       return `Rebuild to ${cfg.repMax} reps on all ${cfg.sets} sets, then increases resume.`;
     default:
@@ -731,13 +761,29 @@ function analyse(workouts, health, rpeLog) {
     w.sets.forEach((s) => (by[s.exercise] = by[s.exercise] || []).push(s));
     Object.entries(by).forEach(([n, ss]) => {
       const top = Math.max(...ss.map((x) => x.weight));
-      const a = ss.filter((x) => x.weight >= top - 1e-6).length;
-      topSets += a; allSets += ss.length;
-      rampByEx[n] = rampByEx[n] || { top: 0, all: 0 };
-      rampByEx[n].top += a; rampByEx[n].all += ss.length;
+      // Motra does not flag warm-ups, so they parse as ordinary sets. A single
+      // weight-ratio threshold is arbitrary, so this votes on three signals.
+      //
+      // The rest signal is empirical, not assumed: in this log, median rest AFTER
+      // a set scales with how heavy it was — 74s under 50% of top, 150s at
+      // 50-70%, then ~190s from 70% upward (Welch t = 3.17). Nobody rests three
+      // minutes after the empty bar. Two of three signals marks a warm-up.
+      const isWarm = (x, k) => {
+        const votes = (x.weight < top * 0.7 ? 1 : 0)
+                    + ((ss[k + 1] && ss[k + 1].rest > 0 && ss[k + 1].rest < 120) ? 1 : 0)
+                    + (k === 0 && x.weight < top * 0.85 ? 1 : 0);
+        return votes >= 2;
+      };
+      const working = ss.filter((x, k) => !isWarm(x, k));
+      const a = working.filter((x) => x.weight >= top - 1e-6).length;
+      topSets += a; allSets += working.length;
+      rampByEx[n] = rampByEx[n] || { top: 0, all: 0, warm: 0 };
+      rampByEx[n].top += a; rampByEx[n].all += working.length;
+      rampByEx[n].warm += ss.length - working.length;
     });
   });
   const rampPct = allSets ? Math.round((1 - topSets / allSets) * 100) : 0;
+  const warmSets = workouts.reduce((a, w) => a + w.sets.length, 0) - allSets;
 
   const COMPOUND = /squat|deadlift|press|row|pull ?down|dip|lunge/i;
   const cRest = [], iRest = [];
@@ -746,6 +792,26 @@ function analyse(workouts, health, rpeLog) {
   }));
   const medOf = (a) => (a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0);
 
+
+  const prs = {};
+  Object.entries(byEx).forEach(([name, pts]) => {
+    const sorted = pts.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    let bestE = 0, bestEDate = null, bestW = 0, bestWDate = null;
+    const hits = [];
+    sorted.forEach((p) => {
+      const topW = Math.max(...p.sets.map((s) => s.weight));
+      let got = null;
+      if (p.e1rm > bestE + 1e-6) { bestE = p.e1rm; bestEDate = p.date; got = "e1rm"; }
+      if (topW > bestW + 1e-6) { bestW = topW; bestWDate = p.date; got = got ? "both" : "weight"; }
+      if (got) hits.push({ date: p.date, kind: got, e1rm: p.e1rm, weight: topW });
+    });
+    const last = sorted[sorted.length - 1];
+    prs[name] = { bestE1RM: +bestE.toFixed(1), bestE1RMDate: bestEDate,
+                  bestWeight: bestW, bestWeightDate: bestWDate, history: hits,
+                  setLast: hits.length > 0 && hits[hits.length - 1].date === last.date,
+                  daysSince: bestEDate
+                    ? Math.round((new Date(last.date) - new Date(bestEDate)) / 864e5) : null };
+  });
 
   const progress = Object.entries(byEx).map(([name, pts]) => {
     pts.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -773,7 +839,7 @@ function analyse(workouts, health, rpeLog) {
                return v ? Math.round((1 - v.top / v.all) * 100) : null; })(),
              topReps: topRepsByEx[name] || [],
              setCounts: setCountsByEx[name] || [],
-             muscles: pts[pts.length - 1].muscles, pts };
+             pr: prs[name], muscles: pts[pts.length - 1].muscles, pts };
   }).sort((a, b) => a.slope - b.slope);
 
   // Rest vs time under tension.
@@ -886,12 +952,35 @@ function analyse(workouts, health, rpeLog) {
   const templates = (repeated.length >= 2 ? repeated : allTpl)
     .sort((a, b) => (a.lastDate < b.lastDate ? -1 : 1));  // longest-ago first = due next
 
+  // Volume trend: is the deficit actually being fixed? A snapshot says where you
+  // are; this says which direction you are moving.
+  const lastDay = workouts[workouts.length - 1].start;
+  const cut = new Date(lastDay.getTime() - 28 * 864e5);
+  const prevCut = new Date(lastDay.getTime() - 56 * 864e5);
+  const recentW = workouts.filter((w) => w.start >= cut);
+  const priorW = workouts.filter((w) => w.start >= prevCut && w.start < cut);
+  const countBy = (list) => {
+    const c = {};
+    list.forEach((w) => w.sets.forEach((s) => s.muscles.forEach((m) => { c[m] = (c[m] || 0) + 1; })));
+    return c;
+  };
+  const rc = countBy(recentW), pc = countBy(priorW);
+  const recWeeks = Math.max(1, (lastDay - cut) / 6048e5);
+  const priWeeks = Math.max(1, (cut - prevCut) / 6048e5);
+  const volumeTrend = Object.keys(BOUNDS).map((m) => {
+    const r = (rc[m] || 0) / recWeeks, p = (pc[m] || 0) / priWeeks;
+    return { muscle: m, recent: +r.toFixed(1), prior: +p.toFixed(1),
+             delta: +(r - p).toFixed(1),
+             dir: r - p > 0.5 ? "up" : r - p < -0.5 ? "down" : "flat" };
+  }).filter((x) => x.recent > 0 || x.prior > 0)
+    .sort((a, b) => a.delta - b.delta);
+
   const doseCurve = [];
   for (let n = 0; n <= 30; n += 0.5) {
     doseCurve.push([n, +(Math.log(1 + n / DOSE_K) / Math.log(1 + 30 / DOSE_K) * 100).toFixed(1)]);
   }
 
-  return { templates, doseCurve, rampPct, topSets, allSets, rampByEx,
+  return { templates, doseCurve, volumeTrend, prs, rampPct, topSets, allSets, warmSets, rampByEx,
            compoundRest: medOf(cRest), isolationRest: medOf(iRest), days: Math.round(days), weeks: +weeks.toFixed(1), sessions: workouts.length,
            totalSets: workouts.reduce((a, w) => a + w.sets.length, 0),
            totalVolume: Math.round(workouts.reduce((a, w) =>
@@ -978,7 +1067,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.14e149c";
+const BUILD="2026-08-18.4d74ead";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1074,7 +1163,10 @@ function viewToday(){
           <div class="mg">${i+1} of ${t.exercises.length} · <em>${esc(nice((p.muscles||[])[0]||""))}</em>${
             d.missingLast?' · <span style="color:var(--hold)">not logged last time</span>':""}</div>
         </div>
-        <span class="chip">${st.t}</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          <span class="chip">${st.t}</span>
+          ${p.pr&&p.pr.setLast?'<span class="chip" style="--c:var(--go)">PR</span>':""}
+        </div>
       </div>
       <div class="load">${load}
         <span class="xs">× ${pr.targetReps} reps × ${pr.sets} sets</span></div>
@@ -1134,6 +1226,19 @@ function viewDetail(){
     <div style="padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(${st.c}) 12%,transparent);
       font-size:13.5px;line-height:1.45;color:var(--ink-2)">${unlockHTML(pr)}</div>
   </div>
+  ${p.pr?`<div class="card"><div class="h2">Best ever</div>
+    <div style="display:flex;gap:22px;flex-wrap:wrap">
+      <div><div class="lbl">Est. 1RM</div>
+        <div style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.bestE1RM}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
+        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.bestE1RMDate)}</div></div>
+      <div><div class="lbl">Heaviest</div>
+        <div style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px">${p.pr.bestWeight}<span style="font-size:14px;color:var(--ink-2)"> lb</span></div>
+        <div class="tiny" style="margin-top:2px">${shortDate(p.pr.bestWeightDate)}</div></div>
+    </div>
+    <div class="sub" style="margin-top:12px">${p.pr.setLast?
+      `<span style="color:var(--go);font-weight:600">You set a personal best last session.</span>`:
+      `Last personal best was <b>${p.pr.daysSince} days</b> ago.${p.pr.daysSince>35?" That is a long time on one lift — it is the clearest sign this one needs a change.":""}`}</div>
+  </div>`:""}
   <div class="card"><div class="h2">Rest between sets</div>
     <div class="sub">Your median here is <b>${p.restMedian!=null?p.restMedian+"s":"—"}</b>.
       ${p.isCompound?
@@ -1246,6 +1351,27 @@ function viewInsights(){
     ${FIND.length>2?`<button class="btn quiet" style="margin:6px 0 0" onclick="showAllFind=${!showAllFind};render()">
       ${showAllFind?"Show less":`Show ${FIND.length-2} more`}</button>`:""}
   </div>
+  <div class="h2" style="margin-top:24px">Are you fixing it?</div>
+  <div class="sub" style="margin-bottom:12px">Weekly sets per muscle, last 4 weeks against the 4 before.
+   A snapshot tells you where you are; this tells you which way you are moving.</div>
+  <div class="card"><table><thead><tr><th>Muscle</th><th>Prior 4wk</th><th>Last 4wk</th><th>Change</th></tr></thead>
+   <tbody>${A.volumeTrend.map(v=>`<tr><td style="text-transform:capitalize">${esc(nice(v.muscle))}</td>
+    <td>${v.prior}</td><td>${v.recent}</td>
+    <td style="color:var(${v.dir==="up"?"--go":v.dir==="down"?"--stop":"--ink-3"})">${
+      v.dir==="up"?"▲ +":v.dir==="down"?"▼ ":"– "}${v.dir==="flat"?"":Math.abs(v.delta)}</td></tr>`).join("")}
+   </tbody></table></div>
+
+  <div class="h2" style="margin-top:24px">Personal bests</div>
+  <div class="sub" style="margin-bottom:12px">A lift that has not set a best in over five weeks is
+   telling you something the weekly numbers do not.</div>
+  <div class="card"><table><thead><tr><th>Lift</th><th>Best e1RM</th><th>When</th></tr></thead><tbody>
+   ${A.progress.filter(p=>p.pr&&p.n>=4).slice().sort((a,b)=>(b.pr.daysSince||0)-(a.pr.daysSince||0))
+     .map(p=>`<tr><td>${esc(p.name.length>22?p.name.slice(0,21)+"…":p.name)}</td>
+     <td>${p.pr.bestE1RM}</td>
+     <td style="color:var(${p.pr.setLast?"--go":p.pr.daysSince>35?"--stop":"--ink-3"})">${
+       p.pr.setLast?"last session":p.pr.daysSince+"d ago"}</td></tr>`).join("")}
+  </tbody></table></div>
+
   <div class="h2" style="margin-top:24px">Where a set is worth most</div>
   <div class="sub" style="margin-bottom:12px">Volume drives growth with diminishing returns and no
    observed plateau (Pelland et al. 2025 — 67 studies, 2,058 people). A dial, not a threshold.</div>
