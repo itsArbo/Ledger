@@ -1474,7 +1474,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.b955562";
+const BUILD="2026-08-18.e2a370a";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -2219,8 +2219,21 @@ function importMotra(input){
     }
     const W=parseMotra(rows);
     if(!W.length){msg("No workouts found — is that the Motra export?",false);return;}
-    DB.workouts=W;DB.importedAt=new Date().toISOString().slice(0,10);save();recompute();
-    msg(`Imported ${W.length} sessions, ${W.reduce((a,x)=>a+x.sets.length,0)} sets.`,true);
+    // Merge, never replace. If Motra ever exports a rolling window instead of
+    // full history, a straight assignment would silently delete every session
+    // older than that window — and the loss would look like normal behaviour.
+    // Keyed on date+title; the new file wins any collision.
+    // Keyed on the exact start timestamp, not the calendar day: you already
+    // have days carrying two separate sessions (30 Jun ran a hamstring session
+    // and an ab session 37 minutes apart). A date-only key would silently drop
+    // one of them, and the loss would look like ordinary behaviour.
+    const key=w=>w.start.toISOString()+"|"+(w.title||"").trim();
+    const keep=(DB.workouts||[]).filter(o=>!W.some(n=>key(n)===key(o)));
+    const added=W.filter(n=>!(DB.workouts||[]).some(o=>key(o)===key(n))).length;
+    DB.workouts=keep.concat(W).sort((a,b)=>a.start-b.start);
+    DB.importedAt=new Date().toISOString().slice(0,10);save();recompute();
+    msg(`Imported ${W.length} sessions — ${added} new, ${W.length-added} updated. `
+       +`${DB.workouts.length} on file.`,true);
     setTimeout(()=>go("today"),700);
   }catch(e){msg("Could not read that file: "+e.message,false);}};
   isCSV?r.readAsText(f):r.readAsArrayBuffer(f);
