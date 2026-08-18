@@ -84,6 +84,10 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .ex .unlock{margin-top:12px;padding:10px 12px;border-radius:11px;font-size:12.5px;
   line-height:1.4;background:color-mix(in srgb,var(--c) 11%,transparent);color:var(--ink-2)}
 .ex .unlock b{color:var(--c);font-weight:700}
+.ex .note{margin-top:8px;padding:10px 12px;border-radius:11px;font-size:12.5px;line-height:1.45;
+  text-align:left;background:color-mix(in srgb,var(--c) 12%,transparent);color:var(--ink-2);
+  border-left:3px solid var(--c)}
+.ex .note b{color:var(--c);font-weight:700}
 .dots{display:flex;gap:5px;margin-top:12px}
 .dots i{width:26px;height:5px;border-radius:3px;background:var(--c);opacity:.85}
 
@@ -1246,13 +1250,12 @@ function analyse(workouts, health, rpeLog) {
   const perWeekNow = {};
   Object.entries(msets).forEach(([m, n]) => { perWeekNow[m] = n / weeks; });
 
-  // How many sets of one exercise this session contains on an average run.
-  const setsOfExPerSession = (title, exName) => {
-    const runs = workouts.filter((w) => (w.title || "").replace(/\s+/g, " ").trim() === title);
-    if (!runs.length) return 0;
-    const n = runs.reduce((a, w) => a + w.sets.filter((s) => s.exercise === exName).length, 0);
-    return Math.max(1, Math.round(n / runs.length));
-  };
+  // How many sets of this exercise you normally do. MUST be the same figure the
+  // prescription uses (inferSets over the same counts) — otherwise the Train
+  // card says "3 sets" while the note under it says "you usually do 1", and the
+  // app contradicts itself on one screen.
+  const setsOfExPerSession = (title, exName) =>
+    Math.max(1, inferSets(setCountsByEx[exName] || []));
   // Frequency as a phrase, never a decimal. "0.3x per week" describes nothing
   // a person recognises; "about once every 3 weeks" does.
   const freqPhrase = (f) => {
@@ -1471,7 +1474,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.e87da77";
+const BUILD="2026-08-18.b955562";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -1661,11 +1664,21 @@ function viewToday(){
     return `<button aria-pressed="${i===tplIdx}" onclick="tplIdx=${i};render()">${esc(short.slice(0,26))}</button>`;
   }).join("");
 
+  // The advice from Insights, carried to the screen you actually stand on in
+  // the gym. An insight you have to go and look for is an insight you skip.
+  const rec=(A.recommendations||[]).find(x=>x.title===t.title);
+  const rqMap={}; (A.repQuality||[]).forEach(x=>{rqMap[x.name]=x;});
+  // "Add a 2nd set" read as a contradiction next to a card prescribing 4 sets —
+  // it meant one set at the TOP weight. Named for the behaviour instead.
+  const rqChip={easy:{t:"Go heavier",c:"--stop"},noControl:{t:"Stop ramping",c:"--accent"}};
+
   const cards=(t.detail||t.exercises.map(n=>({name:n}))).map((d,i)=>{
     const name=d.name;
     const p=A.progress.find(x=>x.name===name);
     if(!p)return "";
     const pr=prescFor(p),st=STATUS[pr.decision]||{c:"--hold",t:""};
+    const rq=rqMap[name],chip=rq?rqChip[rq.verdict]:null;
+    const addTo=rec&&(rec.additions||[]).find(a=>a.exercise===name);
     const load=pr.weight==null?`<span class="kg">—</span>`:
       `<span class="kg">${pr.weight}</span><span class="unit">lb</span>`;
     return `<button class="ex" style="--c:var(${st.c})" onclick="detail='${q(name)}';render()">
@@ -1678,12 +1691,23 @@ function viewToday(){
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
           <span class="chip">${st.t}</span>
           ${p.pr&&p.pr.setLast?'<span class="chip" style="--c:var(--go)">PR</span>':""}
+          ${chip?`<span class="chip" style="--c:var(${chip.c})">${chip.t}</span>`:""}
         </div>
       </div>
       <div class="load">${load}
         <span class="xs">× ${pr.targetReps} reps × ${pr.sets} sets</span></div>
       <div class="dots">${Array.from({length:pr.sets},()=>"<i></i>").join("")}</div>
       <div class="unlock">${unlockHTML(pr)}</div>
+      ${(()=>{ // One note per card. Two stacked advisories is the clutter he flagged.
+        const bits=[];
+        if(addTo)bits.push(`Do <b>${addTo.setsTarget} sets</b> today — you usually do ${addTo.setsNow}.`);
+        if(rq&&rq.verdict==="easy")bits.push(`Last time you got <b>${rq.fadeLabel.toLowerCase()}</b>, so
+          the weight is light. Take the last set to 1–2 reps left.`);
+        if(rq&&rq.verdict==="noControl")bits.push(`You climb in weight and stop, so only 1 set lands at
+          your top weight. Put <b>2–3 sets at the same weight</b> instead.`);
+        if(!bits.length)return "";
+        const c=rq&&rq.verdict==="easy"?"--stop":rq&&rq.verdict==="noControl"?"--accent":"--go";
+        return `<div class="note" style="--c:var(${c})">${bits.join(" ")}</div>`;})()}
     </button>`;
   }).join("");
 
@@ -1704,6 +1728,11 @@ function viewToday(){
              .replace(/\s*Strength Session\s*$/i,"").trim())}</div></div></div>
   <div class="sub" style="margin:-8px 0 14px">Last done ${ago} day${ago===1?"":"s"} ago · ${t.exercises.length} exercises</div>
   <div class="rail">${rail}</div>
+  ${rec&&rec.frequency?`<div class="card" style="border-color:var(--stop);margin-bottom:14px">
+    <div class="h2" style="margin:0 0 5px">Run this every week</div>
+    <div class="sub">You run it <b>${rec.frequency.currentPhrase}</b>. Doing it weekly is worth more than
+      any set you could add: ${rec.frequency.gain.map(g=>`<b>${nice(g.muscle)}</b> ${g.from} → ${g.to}
+      sets a week`).join(", ")}.</div></div>`:""}
   <button class="btn" style="margin-bottom:14px" onclick="lastResult=null;startSession()">Start this session</button>
   ${cards}
   <button class="btn quiet" onclick="tab='allLifts';detail=null;$('app').innerHTML=viewAllLifts()">See all ${A.progress.length} lifts →</button>`;
