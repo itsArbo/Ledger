@@ -79,8 +79,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .ex .kg{font-size:42px;font-weight:700;letter-spacing:-.035em;line-height:1}
 .ex .unit{font-size:16px;font-weight:600;color:var(--ink-2)}
 .ex .xs{font-size:15px;color:var(--ink-2);font-weight:500}
-.ex .why{font-size:12.5px;color:var(--ink-3);margin-top:11px;line-height:1.4;
+.ex .why{font-size:12.5px;color:var(--ink-3);margin-top:10px;line-height:1.4;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ex .unlock{margin-top:12px;padding:10px 12px;border-radius:11px;font-size:12.5px;
+  line-height:1.4;background:color-mix(in srgb,var(--c) 11%,transparent);color:var(--ink-2)}
+.ex .unlock b{color:var(--c);font-weight:700}
 .dots{display:flex;gap:5px;margin-top:12px}
 .dots i{width:26px;height:5px;border-radius:3px;background:var(--c);opacity:.85}
 
@@ -440,7 +443,50 @@ function inferIncrement(weights) {
   return Math.round(inc * 4) / 4;
 }
 
-function defaultConfig(exercise, muscles, inferredIncrement) {
+/**
+ * How many working sets you actually do on this lift, taken as the mode of your
+ * history.
+ *
+ * A hardcoded default of 3 is wrong in both directions: this user does 2 sets of
+ * ab crunch in 14 of 16 sessions, and 4 sets of lat pulldown in 9 of 9. Judging
+ * "did you hit the prescription" against a set count you never train to makes
+ * every session a miss.
+ */
+function inferSets(counts) {
+  if (!counts || counts.length < 3) return null;
+  const tally = {};
+  counts.forEach((n) => { tally[n] = (tally[n] || 0) + 1; });
+  const best = Object.entries(tally)
+    .sort((a, b) => b[1] - a[1] || +b[0] - +a[0])[0];
+  return +best[0];
+}
+
+/**
+ * Learn the rep range from what you actually do at your top load.
+ *
+ * Hypertrophy is largely load-independent above ~30% 1RM — a re-examination of
+ * the repetition continuum found no difference in whole-muscle growth between
+ * >60% and <60% 1RM (effect size 0.03). Strength is load-dependent; size is not.
+ * What matters at lighter loads is proximity to failure. So there is no correct
+ * rep range to impose — only the one you train in.
+ *
+ * This matters mechanically, not just philosophically: the engine only adds load
+ * when EVERY set reaches repMax. Hardcoded ranges set repMax above what this
+ * user had ever achieved on 9 of 16 lifts, so those lifts could never, under any
+ * circumstances, be told to add weight. The gate has to sit where you actually
+ * train or it never opens.
+ */
+function inferRepRange(repsAtTopLoad) {
+  const r = (repsAtTopLoad || []).filter((x) => x > 0).sort((a, b) => a - b);
+  if (r.length < 4) return null;
+  const pct = (p) => r[Math.min(r.length - 1, Math.floor(r.length * p))];
+  // 70th percentile: a target you reach on good sessions, not every session.
+  const repMax = Math.max(5, Math.round(pct(0.7)));
+  const repMin = Math.max(3, Math.min(repMax - 1, Math.round(repMax * 0.65)));
+  return { repMin, repMax };
+}
+
+function defaultConfig(exercise, muscles, inferredIncrement, inferredSets, inferredRange) {
   const m = (muscles && muscles[0]) || "";
   const c = { repMin: 8, repMax: 12, sets: 3, increment: 5, rpeCap: 9, easyRPE: 7,
               stallLimit: 3, deloadFactor: 0.9 };
@@ -452,6 +498,12 @@ function defaultConfig(exercise, muscles, inferredIncrement) {
   // A step learned from your own logged weights beats any guess from muscle group.
   if (inferredIncrement) { c.increment = inferredIncrement; c.incrementSource = "observed"; }
   else c.incrementSource = "default";
+  if (inferredSets) { c.sets = inferredSets; c.setsSource = "observed"; }
+  else c.setsSource = "default";
+  if (inferredRange) {
+    c.repMin = inferredRange.repMin; c.repMax = inferredRange.repMax;
+    c.rangeSource = "observed";
+  } else c.rangeSource = "default";
   return c;
 }
 
@@ -463,7 +515,8 @@ function defaultConfig(exercise, muscles, inferredIncrement) {
  * progressing. So e1RM is charted, never obeyed.
  */
 function nextPrescription(history, cfg) {
-  const cold = (reason) => ({ decision: "needsCalibration", weight: null,
+  const withUnlock = (p) => { p.unlock = unlockText(p, cfg); return p; };
+  const cold = (reason) => withUnlock({ decision: "needsCalibration", weight: null,
                               targetReps: cfg.repMin, sets: cfg.sets, reason });
   if (!history.length) {
     return cold(`No history yet. Pick a weight you could manage for about ${cfg.repMin + 2} reps and log a session.`);
@@ -487,8 +540,8 @@ function nextPrescription(history, cfg) {
     // On light movements 10% can round back to the same number. A deload that
     // does not reduce load is not a deload.
     if (w >= top) w = Math.max(cfg.increment, top - cfg.increment);
-    return { decision: "deload", weight: w, targetReps: cfg.repMin, sets: cfg.sets,
-      reason: `Missed the target ${stalls} sessions running at ${fmt(top)} lb. Backing off to ${fmt(w)} to rebuild.` };
+    return withUnlock({ decision: "deload", weight: w, targetReps: cfg.repMin, sets: cfg.sets,
+      reason: `Missed the target ${stalls} sessions running at ${fmt(top)} lb. Backing off to ${fmt(w)} to rebuild.` });
   }
 
   // The ascending-ramp trap. If you ramp 8×70, 8×90, 8×110 you performed ONE
@@ -498,16 +551,16 @@ function nextPrescription(history, cfg) {
   // stalling, say the thing that actually unblocks progress: repeat the load.
   if (atTop.length < cfg.sets && working.length >= 2) {
     const topReps = Math.min(...atTop.map((s) => s.reps));
-    return { decision: "consolidate", weight: top, targetReps: topReps, sets: cfg.sets,
-      reason: `You did ${atTop.length} set${atTop.length > 1 ? "s" : ""} at ${fmt(top)} lb and the rest lighter, so there is no way to tell whether ${fmt(top)} was repeatable or a one-off — and no rule can add load on that evidence. Do ${cfg.sets} sets at ${fmt(top)} lb for ${topReps} reps. Once you hold it across all ${cfg.sets}, weight increases resume automatically.` };
+    return withUnlock({ decision: "consolidate", weight: top, targetReps: topReps, sets: cfg.sets,
+      reason: `You did ${atTop.length} set${atTop.length > 1 ? "s" : ""} at ${fmt(top)} lb and the rest lighter, so there is no way to tell whether ${fmt(top)} was repeatable or a one-off — and no rule can add load on that evidence. Do ${cfg.sets} sets at ${fmt(top)} lb for ${topReps} reps. Once you hold it across all ${cfg.sets}, weight increases resume automatically.` });
   }
 
   const pres = atTop.slice(0, cfg.sets);
   const allMax = pres.length >= cfg.sets && pres.every((s) => s.reps >= cfg.repMax);
   if (allMax) {
     if (avgRPE != null && avgRPE >= cfg.rpeCap) {
-      return { decision: "hold", weight: top, targetReps: cfg.repMax, sets: cfg.sets,
-        reason: `Hit ${cfg.repMax} reps on every set but at RPE ${fmt(avgRPE)}. Repeating to consolidate before adding load.` };
+      return withUnlock({ decision: "hold", weight: top, targetReps: cfg.repMax, sets: cfg.sets,
+        reason: `Hit ${cfg.repMax} reps on every set but at RPE ${fmt(avgRPE)}. Repeating to consolidate before adding load.` });
     }
     let step = cfg.increment, decision = "increase";
     let reason = `Topped the rep range (${cfg.repMax}×${cfg.sets}) at ${fmt(top)} lb. Adding ${fmt(step)}.`;
@@ -521,8 +574,35 @@ function nextPrescription(history, cfg) {
 
   const weakest = pres.length ? Math.min(...pres.map((s) => s.reps)) : cfg.repMin;
   const target = Math.min(weakest + 1, cfg.repMax);
-  return { decision: "addReps", weight: top, targetReps: target, sets: cfg.sets,
-    reason: `Holding ${fmt(top)} lb and chasing ${target} reps on every set (weakest last time was ${weakest}).` };
+  return withUnlock({ decision: "addReps", weight: top, targetReps: target, sets: cfg.sets,
+    reason: `Holding ${fmt(top)} lb and chasing ${target} reps on every set (weakest last time was ${weakest}).` });
+}
+
+/**
+ * What has to happen for the NEXT weight increase.
+ *
+ * Without this the app is a diagnostic that never gives a green light: it says
+ * "repeat load" or "add a rep" indefinitely and never names the finish line.
+ */
+function unlockText(presc, cfg) {
+  const inc = fmt(cfg.increment);
+  switch (presc.decision) {
+    case "consolidate":
+      return `Hit ${cfg.repMax} reps on all ${cfg.sets} sets at ${fmt(presc.weight)} lb → next session adds ${inc} lb.`;
+    case "addSet":
+      return `Do all ${cfg.sets} sets at ${fmt(presc.weight)} lb for ${cfg.repMax} reps → next session adds ${inc} lb.`;
+    case "addReps":
+      return `Reach ${cfg.repMax} reps on all ${cfg.sets} sets at ${fmt(presc.weight)} lb → next session adds ${inc} lb.`;
+    case "hold":
+      return `Repeat ${fmt(presc.weight)} lb and log RPE ${cfg.rpeCap} or below → then it adds ${inc} lb.`;
+    case "increase":
+    case "doubleIncrease":
+      return `Adding ${fmt(presc.weight - (presc.prevWeight || presc.weight)) || inc} lb now. Climb back to ${cfg.repMax} reps to trigger the next one.`;
+    case "deload":
+      return `Rebuild to ${cfg.repMax} reps on all ${cfg.sets} sets, then increases resume.`;
+    default:
+      return `Log one session to start.`;
+  }
 }
 
 function judge(session, presc, cfg) {
@@ -621,10 +701,22 @@ function analyse(workouts, health, rpeLog) {
     });
   });
 
-  const weightsByEx = {};
-  workouts.forEach((w) => w.sets.forEach((s) => {
-    (weightsByEx[s.exercise] = weightsByEx[s.exercise] || []).push(s.weight);
-  }));
+  const weightsByEx = {}, setCountsByEx = {}, topRepsByEx = {};
+  workouts.forEach((w) => {
+    const tops = {};
+    w.sets.forEach((s) => { tops[s.exercise] = Math.max(tops[s.exercise] || 0, s.weight); });
+    w.sets.forEach((s) => {
+      if (s.weight === tops[s.exercise])
+        (topRepsByEx[s.exercise] = topRepsByEx[s.exercise] || []).push(s.reps);
+    });
+    w.sets.forEach((s) => {
+      (weightsByEx[s.exercise] = weightsByEx[s.exercise] || []).push(s.weight);
+    });
+    const byEx2 = {};
+    w.sets.forEach((s) => { byEx2[s.exercise] = (byEx2[s.exercise] || 0) + 1; });
+    Object.entries(byEx2).forEach(([n, c]) =>
+      (setCountsByEx[n] = setCountsByEx[n] || []).push(c));
+  });
 
   const progress = Object.entries(byEx).map(([name, pts]) => {
     pts.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -643,6 +735,10 @@ function analyse(workouts, health, rpeLog) {
              verdict, first: +pts[0].e1rm.toFixed(1),
              last: +pts[pts.length - 1].e1rm.toFixed(1),
              increment: inferIncrement(weightsByEx[name] || []), ladder,
+             typicalSets: inferSets(setCountsByEx[name] || []),
+             repRange: inferRepRange(topRepsByEx[name] || []),
+             topReps: topRepsByEx[name] || [],
+             setCounts: setCountsByEx[name] || [],
              muscles: pts[pts.length - 1].muscles, pts };
   }).sort((a, b) => a.slope - b.slope);
 
@@ -720,19 +816,38 @@ function analyse(workouts, health, rpeLog) {
   // Session templates, recovered from what you actually do rather than a plan
   // you would have to enter. "What is next" is then answerable: the template you
   // have gone longest without doing, with its exercises in your usual order.
-  const tpl = {};
+  // Templates are the UNION of exercises across every instance of a session
+  // title, not just the most recent one. Motra occasionally fails to record an
+  // exercise — on 11 Aug it missed leg extensions and ab crunches — and taking
+  // only the latest instance silently deletes those from the programme. Anything
+  // appearing in >=30% of instances (or in the most recent) is kept, ordered by
+  // its usual position, and flagged if it was absent last time.
+  const inst = {};
   workouts.forEach((w) => {
     const key = (w.title || "Session").replace(/\s+/g, " ").trim();
     const day = w.start.toISOString().slice(0, 10);
     const order = [];
     w.sets.forEach((s) => { if (!order.includes(s.exercise)) order.push(s.exercise); });
-    if (!tpl[key] || tpl[key].lastDate < day) {
-      tpl[key] = { title: key, lastDate: day, exercises: order,
-                   count: (tpl[key] ? tpl[key].count : 0) + 1 };
-    } else tpl[key].count++;
+    (inst[key] = inst[key] || []).push({ day, order });
   });
-  const allTpl = Object.values(tpl).filter((t) => t.exercises.length >= 2);
-  // Prefer sessions you actually repeat; one-off titles are noise, not a split.
+
+  const allTpl = Object.entries(inst).map(([title, runs]) => {
+    runs.sort((a, b) => (a.day < b.day ? -1 : 1));
+    const latest = runs[runs.length - 1];
+    const stat = {};
+    runs.forEach((r) => r.order.forEach((name, i) => {
+      stat[name] = stat[name] || { name, seen: 0, pos: 0 };
+      stat[name].seen++; stat[name].pos += i;
+    }));
+    const exercises = Object.values(stat)
+      .filter((x) => x.seen / runs.length >= 0.3 || latest.order.includes(x.name))
+      .sort((a, b) => a.pos / a.seen - b.pos / b.seen)
+      .map((x) => ({ name: x.name, seen: x.seen,
+                     missingLast: !latest.order.includes(x.name) }));
+    return { title, lastDate: latest.day, count: runs.length,
+             exercises: exercises.map((e) => e.name), detail: exercises };
+  }).filter((t) => t.exercises.length >= 2);
+
   const repeated = allTpl.filter((t) => t.count >= 2);
   const templates = (repeated.length >= 2 ? repeated : allTpl)
     .sort((a, b) => (a.lastDate < b.lastDate ? -1 : 1));  // longest-ago first = due next
@@ -820,7 +935,7 @@ function buildFindings(A) {
 
 /* ===== /CORE ===== */
 
-const BUILD="2026-08-18.ce87308";
+const BUILD="2026-08-18.6d59714";
 
 /* ---------------------------------------------------------------- storage */
 const KEY="ledger.v1",_mem={};
@@ -854,11 +969,17 @@ const daysAgo=s=>Math.round((Date.now()-new Date(s+"T12:00:00"))/864e5);
 /* Exactly three status colours, one meaning each — learned once, applied everywhere. */
 const STATUS={
   increase:{c:"--go",t:"add weight"}, doubleIncrease:{c:"--go",t:"big jump"},
-  addReps:{c:"--go",t:"add a rep"},   consolidate:{c:"--hold",t:"repeat load"},
+  addReps:{c:"--go",t:"add a rep"},   consolidate:{c:"--hold",t:"repeat load"}, addSet:{c:"--hold",t:"add a set"},
   hold:{c:"--hold",t:"hold"},         deload:{c:"--stop",t:"deload"},
   needsCalibration:{c:"--hold",t:"set weight"},
 };
-const cfgFor=p=>DB.configs[p.name]||defaultConfig(p.name,p.muscles,p.increment);
+// Bold the two numbers that matter — the target and the reward.
+function unlockHTML(pr){
+  return esc(pr.unlock||"")
+    .replace(/(\d+(?:\.\d+)?) reps/,"<b>$1 reps</b>")
+    .replace(/adds (\d+(?:\.\d+)?) lb/,"adds <b>$1 lb</b>");
+}
+const cfgFor=p=>Object.assign(defaultConfig(p.name,p.muscles,p.increment,p.typicalSets,p.repRange),DB.configs[p.name]||{});
 const prescFor=p=>nextPrescription(p.pts.map(x=>({date:x.date,sets:x.sets,met:x.met})),cfgFor(p));
 
 /* ---------------------------------------------------------------- routing */
@@ -896,7 +1017,8 @@ function viewToday(){
     return `<button aria-pressed="${i===tplIdx}" onclick="tplIdx=${i};render()">${esc(short.slice(0,26))}</button>`;
   }).join("");
 
-  const cards=t.exercises.map((name,i)=>{
+  const cards=(t.detail||t.exercises.map(n=>({name:n}))).map((d,i)=>{
+    const name=d.name;
     const p=A.progress.find(x=>x.name===name);
     if(!p)return "";
     const pr=prescFor(p),st=STATUS[pr.decision]||{c:"--hold",t:""};
@@ -906,14 +1028,15 @@ function viewToday(){
       <div class="top">
         <div style="min-width:0">
           <div class="nm">${esc(name)}</div>
-          <div class="mg">${i+1} of ${t.exercises.length} · <em>${esc(nice((p.muscles||[])[0]||""))}</em></div>
+          <div class="mg">${i+1} of ${t.exercises.length} · <em>${esc(nice((p.muscles||[])[0]||""))}</em>${
+            d.missingLast?' · <span style="color:var(--hold)">not logged last time</span>':""}</div>
         </div>
         <span class="chip">${st.t}</span>
       </div>
       <div class="load">${load}
         <span class="xs">× ${pr.targetReps} reps × ${pr.sets} sets</span></div>
       <div class="dots">${Array.from({length:pr.sets},()=>"<i></i>").join("")}</div>
-      <div class="why">${esc(pr.reason)}</div>
+      <div class="unlock">${unlockHTML(pr)}</div>
     </button>`;
   }).join("");
 
@@ -964,7 +1087,20 @@ function viewDetail(){
     <div class="lbl">Next session</div>
     <div class="big">${pr.weight==null?"—":pr.weight}<span style="font-size:20px;font-weight:600;color:var(--ink-2)">${pr.weight==null?"":" lb"}</span></div>
     <div class="sub" style="margin-bottom:12px">${pr.targetReps} reps × ${pr.sets} sets</div>
-    <div class="sub">${esc(pr.reason)}</div>
+    <div class="sub" style="margin-bottom:12px">${esc(pr.reason)}</div>
+    <div style="padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(${st.c}) 12%,transparent);
+      font-size:13.5px;line-height:1.45;color:var(--ink-2)">${unlockHTML(pr)}</div>
+  </div>
+  <div class="card"><div class="h2">Rep range</div>
+    <div class="sub" style="margin-bottom:12px">Hitting the top of this range on every set is what
+      triggers a weight increase, so it has to sit where you actually train. Learned from your reps at
+      top load: <b>${p.topReps.slice(-10).join(", ")}</b> → targeting <b>${cfg.repMin}–${cfg.repMax}</b>.
+      Hypertrophy is largely load-independent above ~30% 1RM, so no range is "correct" — proximity to
+      failure and total volume matter far more than the number.</div>
+    <div class="rpe">${[6,8,10,12,15,20].map(v=>`<button aria-pressed="${cfg.repMax===v}"
+      onclick="setRepMax('${q(p.name)}',${v})">${v}</button>`).join("")}</div>
+    ${DB.configs[p.name]&&DB.configs[p.name].repMax?
+      `<button class="btn quiet" style="margin-top:8px" onclick="setRepMax('${q(p.name)}',null)">Reset to detected</button>`:""}
   </div>
   <div class="card"><div class="h2">How hard was ${shortDate(last.date)}?</div>
     <div class="sub" style="margin-bottom:13px">10 = nothing left. 8 = about two reps in reserve.
@@ -973,17 +1109,50 @@ function viewDetail(){
     <div class="rpe">${rpe}</div>
     ${cur?`<button class="btn quiet" style="margin-top:8px" onclick="setRPE('${q(p.name)}','${last.date}',null)">Clear</button>`:""}
   </div>
-  <div class="card"><div class="h2">Loadable weights</div>
-    <div class="sub">${p.increment?`Step <b>${p.increment} lb</b>, learned from every weight you have
-      used here — so prescriptions land on numbers this equipment can make.`:
-      `Not enough distinct weights yet; using the ${cfg.increment} lb default for its muscle group.`}</div>
-    <div class="sub" style="margin-top:8px;color:var(--ink-3)">${p.ladder.length?p.ladder.join(" · ")+" lb":"—"}</div>
+  <div class="card"><div class="h2">Smallest jump</div>
+    <div class="sub" style="margin-bottom:12px">This drives every weight it prescribes.
+      Detected from your logged weights as <b>${p.increment?p.increment+" lb":"unknown"}</b> —
+      but detection can only see jumps you have <em>actually made</em>, so it will overestimate
+      if you have never taken a smaller one. A barbell with 2.5 lb plates a side is 5 lb.
+      Set the truth here.</div>
+    <div class="rpe">${[2.5,5,10,25,45,90].map(v=>`<button aria-pressed="${cfg.increment===v}"
+      onclick="setInc('${q(p.name)}',${v})">${v}</button>`).join("")}</div>
+    ${DB.configs[p.name]&&DB.configs[p.name].increment?
+      `<button class="btn quiet" style="margin-top:8px" onclick="setInc('${q(p.name)}',null)">Reset to detected</button>`:""}
+  </div>
+  <div class="card"><div class="h2">Sets per session</div>
+    <div class="sub" style="margin-bottom:12px">Learned from your history, not assumed — you have done
+      <b>${p.setCounts.slice(-8).join(", ")}</b> sets here across recent sessions, so it targets
+      <b>${cfg.sets}</b>. Every "did you hit it" judgement is measured against this number.</div>
+    <div class="rpe">${[1,2,3,4,5].map(v=>`<button aria-pressed="${cfg.sets===v}"
+      onclick="setSets('${q(p.name)}',${v})">${v}</button>`).join("")}</div>
+    ${DB.configs[p.name]&&DB.configs[p.name].sets?
+      `<button class="btn quiet" style="margin-top:8px" onclick="setSets('${q(p.name)}',null)">Reset to detected</button>`:""}
+  </div>
+  <div class="card"><div class="h2">Weights you have used</div>
+    <div class="sub" style="color:var(--ink-3)">${p.ladder.length?p.ladder.join(" · ")+" lb":"—"}</div>
   </div>
   <div class="card"><div class="h2">Last 8 sessions</div>
     <div class="sub" style="margin-bottom:8px">${p.slope>0?"+":""}${p.slope} lb/week of estimated 1RM ·
       R² ${p.r2.toFixed(2)} · ${p.r2<0.4?"low R², treat as noise":"well fitted"}</div>
     ${hist}</div>
   <div style="height:20px"></div>`;
+}
+function setInc(name,v){
+  DB.configs=DB.configs||{};DB.configs[name]=DB.configs[name]||{};
+  if(v===null)delete DB.configs[name].increment;else DB.configs[name].increment=v;
+  save();recompute();render();
+}
+function setRepMax(name,v){
+  DB.configs=DB.configs||{};DB.configs[name]=DB.configs[name]||{};
+  if(v===null){delete DB.configs[name].repMax;delete DB.configs[name].repMin;}
+  else {DB.configs[name].repMax=v;DB.configs[name].repMin=Math.max(3,Math.round(v*0.65));}
+  save();recompute();render();
+}
+function setSets(name,v){
+  DB.configs=DB.configs||{};DB.configs[name]=DB.configs[name]||{};
+  if(v===null)delete DB.configs[name].sets;else DB.configs[name].sets=v;
+  save();recompute();render();
 }
 function setRPE(name,date,v){
   DB.rpe=DB.rpe||{};DB.rpe[name]=DB.rpe[name]||{};
